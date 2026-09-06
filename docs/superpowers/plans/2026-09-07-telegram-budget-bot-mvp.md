@@ -665,14 +665,16 @@ Expected: FAIL — alembic не налаштований (`No config file 'alemb
 cd tg-bot && .venv/bin/alembic init -t async alembic
 ```
 
-Далі відредагувати `tg-bot/alembic.ini` — прибрати рядок `sqlalchemy.url` (URL береться з env) і залишити:
+Далі **точково відредагувати** згенерований `tg-bot/alembic.ini` — не переписувати
+файл цілком. У секції `[alembic]`:
 
-```ini
-[alembic]
-script_location = alembic
-prepend_sys_path = src
-file_template = %%(rev)s_%%(slug)s
-```
+- видалити рядок `sqlalchemy.url = ...` (URL складається з `DATABASE_PATH` у `env.py`);
+- переконатись, що є `script_location = alembic` і `prepend_sys_path = src`;
+- додати `file_template = %%(rev)s_%%(slug)s`.
+
+**Секції логування (`[loggers]`, `[handlers]`, `[formatters]` і похідні), які згенерував
+`alembic init`, треба лишити на місці.** `env.py` викликає
+`fileConfig(config.config_file_name)`, і без них Alembic упаде з `KeyError: 'formatters'`.
 
 `tg-bot/alembic/env.py` — замінити повністю на:
 
