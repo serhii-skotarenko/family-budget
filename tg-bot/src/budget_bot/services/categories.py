@@ -49,23 +49,29 @@ async def ensure_default_categories(session: AsyncSession, household_id: int) ->
     )
     if existing:
         return
-    session.add_all(
-        [
-            Category(
-                household_id=household_id,
-                name=name,
-                name_normalized=normalize_category_name(name),
-                is_custom=False,
-            )
-            for name in DEFAULT_CATEGORIES
-        ]
-    )
     try:
-        await session.flush()
+        # A SAVEPOINT, not a plain flush: on conflict, only this insert
+        # unwinds. A plain session.rollback() here would discard everything
+        # else already flushed-but-uncommitted in the caller's session (this
+        # bot uses one session per Telegram update, committed only at the
+        # end) and expire every other object the caller is holding.
+        async with session.begin_nested():
+            session.add_all(
+                [
+                    Category(
+                        household_id=household_id,
+                        name=name,
+                        name_normalized=normalize_category_name(name),
+                        is_custom=False,
+                    )
+                    for name in DEFAULT_CATEGORIES
+                ]
+            )
+            await session.flush()
     except IntegrityError:
         # A concurrent call already seeded this household between our
         # existence check and this flush. Treat it as already done.
-        await session.rollback()
+        pass
 
 
 async def list_categories(session: AsyncSession, household_id: int) -> list[Category]:
@@ -111,13 +117,18 @@ async def add_category(session: AsyncSession, household_id: int, raw_name: str) 
     category = Category(
         household_id=household_id, name=name, name_normalized=normalized, is_custom=True
     )
-    session.add(category)
     try:
-        await session.flush()
+        # A SAVEPOINT, not a plain flush: on conflict, only this insert
+        # unwinds. A plain session.rollback() here would discard everything
+        # else already flushed-but-uncommitted in the caller's session (this
+        # bot uses one session per Telegram update, committed only at the
+        # end) and expire every other object the caller is holding.
+        async with session.begin_nested():
+            session.add(category)
+            await session.flush()
     except IntegrityError:
         # Another call inserted the same name between our check above and
         # this flush (e.g. both household members adding it at once).
-        await session.rollback()
         existing = await _find_by_normalized_name(session, household_id, normalized)
         raise DuplicateCategoryError(existing.name if existing else name) from None
     return category

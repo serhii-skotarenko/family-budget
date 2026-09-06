@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from budget_bot.models import Category
+from budget_bot.models import Category, Household
 from budget_bot.services.categories import (
     CategoryNameError,
     DuplicateCategoryError,
@@ -161,3 +161,47 @@ async def test_ensure_default_categories_survives_concurrent_seeding(
     categories = await list_categories(session, household_id)
     assert len(categories) == 1
     assert categories[0].name == EXPECTED_DEFAULT_CATEGORIES[0]
+
+
+async def test_race_recovery_preserves_other_uncommitted_work_in_session(
+    session, household, monkeypatch
+):
+    """The duplicate-race recovery must be scoped to the failed insert (a
+    SAVEPOINT), not roll back the whole transaction. This bot opens one
+    session per Telegram update and commits once at the end, so anything
+    else already flushed-but-not-committed earlier in that same session
+    (e.g. a brand-new Household created moments before this handler ran)
+    must survive a duplicate-category error untouched, with its attributes
+    still readable without triggering a refresh."""
+    await add_category(session, household.id, "Кава")
+
+    # Work flushed earlier in the same session, not yet committed — this is
+    # the shape of a first-ever Telegram update, where Household/Member rows
+    # are flushed before any category handling runs.
+    pending = Household(name="В процесі")
+    session.add(pending)
+    await session.flush()
+
+    real_scalar = AsyncSession.scalar
+    call_count = 0
+
+    async def racy_scalar(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # Simulate the pre-check missing the row a concurrent transaction
+            # just committed.
+            return None
+        return await real_scalar(self, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "scalar", racy_scalar)
+
+    with pytest.raises(DuplicateCategoryError):
+        await add_category(session, household.id, "кава")
+
+    monkeypatch.undo()
+
+    # Still pending (not discarded), and its attributes are readable without
+    # a refresh — i.e. it was never expired by the recovery.
+    assert pending.name == "В процесі"
+    assert await session.get(Household, pending.id) is not None
