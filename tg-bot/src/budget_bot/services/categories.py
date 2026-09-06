@@ -1,6 +1,7 @@
 """Category list management for a household."""
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.models import Category
@@ -59,7 +60,12 @@ async def ensure_default_categories(session: AsyncSession, household_id: int) ->
             for name in DEFAULT_CATEGORIES
         ]
     )
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # A concurrent call already seeded this household between our
+        # existence check and this flush. Treat it as already done.
+        await session.rollback()
 
 
 async def list_categories(session: AsyncSession, household_id: int) -> list[Category]:
@@ -80,6 +86,16 @@ async def get_category(
     )
 
 
+async def _find_by_normalized_name(
+    session: AsyncSession, household_id: int, normalized: str
+) -> Category | None:
+    return await session.scalar(
+        select(Category).where(
+            Category.household_id == household_id, Category.name_normalized == normalized
+        )
+    )
+
+
 async def add_category(session: AsyncSession, household_id: int, raw_name: str) -> Category:
     name = " ".join(raw_name.split())
     if not name:
@@ -88,11 +104,7 @@ async def add_category(session: AsyncSession, household_id: int, raw_name: str) 
         raise CategoryNameError(f"Назва задовга — максимум {MAX_NAME_LENGTH} символів.")
 
     normalized = normalize_category_name(name)
-    duplicate = await session.scalar(
-        select(Category).where(
-            Category.household_id == household_id, Category.name_normalized == normalized
-        )
-    )
+    duplicate = await _find_by_normalized_name(session, household_id, normalized)
     if duplicate is not None:
         raise DuplicateCategoryError(duplicate.name)
 
@@ -100,5 +112,12 @@ async def add_category(session: AsyncSession, household_id: int, raw_name: str) 
         household_id=household_id, name=name, name_normalized=normalized, is_custom=True
     )
     session.add(category)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Another call inserted the same name between our check above and
+        # this flush (e.g. both household members adding it at once).
+        await session.rollback()
+        existing = await _find_by_normalized_name(session, household_id, normalized)
+        raise DuplicateCategoryError(existing.name if existing else name) from None
     return category
