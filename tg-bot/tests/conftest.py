@@ -2,7 +2,8 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.db import create_engine, create_session_factory
-from budget_bot.models import Base, Household
+from budget_bot.models import Base, Category, Household, Member
+from budget_bot.services.categories import ensure_default_categories, list_categories
 
 
 @pytest_asyncio.fixture
@@ -27,3 +28,25 @@ async def household(session) -> Household:
     session.add(item)
     await session.flush()
     return item
+
+
+@pytest_asyncio.fixture
+async def member(session, household) -> Member:
+    item = Member(household_id=household.id, telegram_id=111, display_name="Сергій")
+    session.add(item)
+    await session.flush()
+    return item
+
+
+@pytest_asyncio.fixture
+async def partner(session, household) -> Member:
+    item = Member(household_id=household.id, telegram_id=222, display_name="Оля")
+    session.add(item)
+    await session.flush()
+    return item
+
+
+@pytest_asyncio.fixture
+async def category(session, household) -> Category:
+    await ensure_default_categories(session, household.id)
+    return (await list_categories(session, household.id))[0]  # Їжа
