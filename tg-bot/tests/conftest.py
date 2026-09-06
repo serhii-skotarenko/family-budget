@@ -2,7 +2,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.db import create_engine, create_session_factory
-from budget_bot.models import Base
+from budget_bot.models import Base, Household
 
 
 @pytest_asyncio.fixture
@@ -19,3 +19,11 @@ async def session() -> AsyncSession:
     async with factory() as db_session:
         yield db_session
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def household(session) -> Household:
+    item = Household(name="Тест")
+    session.add(item)
+    await session.flush()
+    return item
