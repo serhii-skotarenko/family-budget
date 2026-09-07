@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
-from budget_bot.bot.callbacks import CategoryCb, ExpenseCb, FilterCb, FlowCb
+from budget_bot.bot.callbacks import CategoryCb, EditFieldCb, ExpenseCb, FilterCb, FlowCb
 from budget_bot.models import Category, Expense, Member
 from budget_bot.periods import PERIOD_TITLES, Period
 
@@ -86,6 +86,20 @@ def expense_card_keyboard(expense_id: int) -> InlineKeyboardMarkup:
         text="🗑 Видалити", callback_data=ExpenseCb(action="delete", expense_id=expense_id)
     )
     builder.adjust(2)
+    return builder.as_markup()
+
+
+def edit_fields_keyboard(expense_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💸 Сума", callback_data=EditFieldCb(field="amount", expense_id=expense_id))
+    builder.button(
+        text="🏷 Категорія", callback_data=EditFieldCb(field="category", expense_id=expense_id)
+    )
+    builder.button(
+        text="📝 Опис", callback_data=EditFieldCb(field="description", expense_id=expense_id)
+    )
+    builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
+    builder.adjust(3, 1)
     return builder.as_markup()
 
 

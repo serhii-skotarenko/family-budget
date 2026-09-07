@@ -4,7 +4,7 @@ from aiogram.filters.callback_data import CallbackData
 
 
 class CategoryCb(CallbackData, prefix="cat"):
-    action: str  # "pick" | "filter"
+    action: str  # "pick" | "filter" | "edit"
     category_id: int
 
 
