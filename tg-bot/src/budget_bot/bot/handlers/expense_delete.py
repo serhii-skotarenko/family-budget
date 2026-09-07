@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.bot.callbacks import ExpenseCb
 from budget_bot.bot.keyboards import delete_confirm_keyboard
+from budget_bot.bot.replies import edit_or_answer
 from budget_bot.bot.texts import MISSING_EXPENSE_TEXT
 from budget_bot.formatting import format_expense_card
 from budget_bot.models import Member
@@ -46,5 +47,5 @@ async def cb_do_delete(
         return
 
     await delete_expense(session, expense)
-    await callback.message.edit_text("🗑 Запис видалено.")
+    await edit_or_answer(callback, "🗑 Запис видалено.")
     await callback.answer()

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.bot.callbacks import ReportCb
 from budget_bot.bot.keyboards import BTN_REPORT, report_periods_keyboard
+from budget_bot.bot.replies import edit_or_answer
 from budget_bot.clock import utcnow
 from budget_bot.formatting import format_report
 from budget_bot.models import Member
@@ -33,5 +34,5 @@ async def cb_report(
 ) -> None:
     period = period_range(Period(callback_data.period), utcnow())
     report = await build_report(session, member.household_id, period)
-    await callback.message.edit_text(format_report(report))
+    await edit_or_answer(callback, format_report(report))
     await callback.answer()
