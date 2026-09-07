@@ -1,9 +1,12 @@
 """Keyboard builders. Button labels are constants so handlers can match on them."""
 
+from collections.abc import Sequence
+
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
-from budget_bot.bot.callbacks import FlowCb
+from budget_bot.bot.callbacks import CategoryCb, FlowCb
+from budget_bot.models import Category
 
 BTN_ADD = "➕ Витрата"
 BTN_LIST = "📋 Список"
@@ -32,4 +35,31 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
 def add_category_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="➕ Додати категорію", callback_data=FlowCb(action="add_category"))
+    return builder.as_markup()
+
+
+def categories_keyboard(
+    categories: Sequence[Category], action: str = "pick"
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for item in categories:
+        builder.button(text=item.name, callback_data=CategoryCb(action=action, category_id=item.id))
+    builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def description_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⏭ Пропустити", callback_data=FlowCb(action="skip"))
+    builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def confirm_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Зберегти", callback_data=FlowCb(action="save"))
+    builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
+    builder.adjust(2)
     return builder.as_markup()
