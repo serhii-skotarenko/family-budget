@@ -12,6 +12,14 @@ from budget_bot.services.expenses import list_expenses
 from tests.conftest import FakeCallback, FakeMessage
 
 
+async def test_start_add_resets_leftover_state_data(state):
+    await state.update_data(category_id=999, amount=100)
+
+    await start_add(FakeMessage(text="/add"), state=state)
+
+    assert await state.get_data() == {}
+
+
 async def test_full_flow_saves_expense_with_description(session, member, category, state):
     await start_add(FakeMessage(text="/add"), state=state)
     assert await state.get_state() == AddExpense.amount

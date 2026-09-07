@@ -39,6 +39,7 @@ class AddExpense(StatesGroup):
 @router.message(F.text == BTN_ADD)
 async def start_add(message: Message, state: FSMContext) -> None:
     await state.set_state(AddExpense.amount)
+    await state.set_data({})
     await message.answer(
         "💸 Введіть суму витрати в гривнях (ціле число):", reply_markup=cancel_keyboard()
     )

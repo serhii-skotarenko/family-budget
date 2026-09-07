@@ -15,6 +15,8 @@ BTN_REPORT = "📊 Звіт"
 BTN_FILTER = "🔎 Фільтр"
 BTN_CATEGORIES = "🏷 Категорії"
 
+REPORT_PERIODS = (Period.WEEK, Period.MONTH, Period.YEAR)
+
 
 def main_menu() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
@@ -151,7 +153,7 @@ def filter_members_keyboard(members: Sequence[Member]) -> InlineKeyboardMarkup:
 
 def report_periods_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for period in (Period.WEEK, Period.MONTH, Period.YEAR):
+    for period in REPORT_PERIODS:
         builder.button(text=PERIOD_TITLES[period], callback_data=ReportCb(period=period.value))
     builder.adjust(1)
     return builder.as_markup()

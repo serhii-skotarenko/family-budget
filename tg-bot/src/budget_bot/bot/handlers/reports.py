@@ -14,8 +14,6 @@ from budget_bot.models import Member
 from budget_bot.periods import Period, period_range
 from budget_bot.services.reports import build_report
 
-REPORT_PERIODS = (Period.WEEK, Period.MONTH, Period.YEAR)
-
 router = Router(name="reports")
 
 
