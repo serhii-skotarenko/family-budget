@@ -15,6 +15,9 @@ cp .env.example .env   # заповнити TELEGRAM_BOT_TOKEN і ALLOWED_TELEGR
 
 Свій Telegram ID можна дізнатись у @userinfobot.
 
+Бот призначений лише для приватних чатів (див. `docs/requirements.md`) —
+вимкніть додавання бота в групи через @BotFather: `/setjoingroups` → Disable.
+
 ## Тести і лінт
 
 ```bash

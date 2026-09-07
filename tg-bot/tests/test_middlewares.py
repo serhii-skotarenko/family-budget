@@ -51,6 +51,35 @@ async def test_access_middleware_blocks_unknown_user_on_callback(session):
     assert callback.answers[-1] == (DENIED_TEXT, True)
 
 
+async def test_access_middleware_blocks_group_chat_message(session):
+    middleware = AccessMiddleware(frozenset({111}), "Сім'я")
+    calls = []
+
+    async def handler(event, data):
+        calls.append(event)
+
+    message = FakeMessage(text="/start", chat_type="group")
+    result = await middleware(handler, message, {"session": session})
+
+    assert result is None
+    assert calls == []
+    assert "особист" in message.last_reply.lower()
+    assert await session.scalar(select(func.count()).select_from(Household)) == 0
+
+
+async def test_access_middleware_blocks_group_chat_callback(session):
+    middleware = AccessMiddleware(frozenset({111}), "Сім'я")
+
+    async def handler(event, data):
+        raise AssertionError("handler must not be called")
+
+    callback = FakeCallback(chat_type="group")
+    await middleware(handler, callback, {"session": session})
+
+    assert callback.answers[-1][1] is True
+    assert "особист" in callback.answers[-1][0].lower()
+
+
 async def test_db_session_middleware_commits_on_success(tmp_path):
     engine = create_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.sqlite3'}")
     async with engine.begin() as connection:
