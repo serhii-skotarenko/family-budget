@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/budget.sqlite3
+    volumes:
+      - budget-data:/data
+    restart: unless-stopped
+
+volumes:
+  budget-data:
