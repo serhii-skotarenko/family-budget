@@ -7,8 +7,9 @@ from budget_bot.bot.handlers.expense_edit import (
     enter_new_description,
     pick_new_category,
 )
+from budget_bot.bot.texts import MAX_DESCRIPTION_LENGTH, MISSING_EXPENSE_TEXT
 from budget_bot.services.categories import add_category
-from budget_bot.services.expenses import create_expense, get_expense
+from budget_bot.services.expenses import create_expense, delete_expense, get_expense
 from tests.conftest import FakeCallback, FakeMessage
 
 
@@ -21,6 +22,17 @@ async def make(session, household, member, category, amount=250, description="к
         amount=amount,
         description=description,
     )
+
+
+async def make_deleted_mid_dialog(session, household, member, category, editing_state, state):
+    """Create an expense, open the edit dialog for it, then delete it — simulating
+    the partner deleting the record while the other member's dialog is still open."""
+    expense = await make(session, household, member, category)
+    expense_id = expense.id
+    await state.set_state(editing_state)
+    await state.update_data(expense_id=expense_id)
+    await delete_expense(session, expense)
+    return expense_id
 
 
 async def test_edit_menu_offers_three_fields(session, household, member, category):
@@ -127,3 +139,92 @@ async def test_editing_a_deleted_expense_reports_alert(session, member, category
     )
 
     assert callback.answers[-1][1] is True
+
+
+async def test_edit_description_truncates_long_input(session, household, member, category, state):
+    expense = await make(session, household, member, category)
+    await state.set_state(EditExpense.description)
+    await state.update_data(expense_id=expense.id)
+
+    long_text = "а" * (MAX_DESCRIPTION_LENGTH + 50)
+    await enter_new_description(
+        FakeMessage(text=long_text), state=state, session=session, member=member
+    )
+
+    updated = await get_expense(session, household.id, expense.id)
+    assert updated.description == long_text[:MAX_DESCRIPTION_LENGTH]
+
+
+async def test_partner_edits_category_without_changing_the_author(
+    session, household, member, partner, category, state
+):
+    expense = await make(session, household, member, category)
+    coffee = await add_category(session, household.id, "Кава")
+    await state.set_state(EditExpense.category)
+    await state.update_data(expense_id=expense.id)
+
+    await pick_new_category(
+        FakeCallback(),
+        callback_data=CategoryCb(action="edit", category_id=coffee.id),
+        state=state,
+        session=session,
+        member=partner,
+    )
+
+    updated = await get_expense(session, household.id, expense.id)
+    assert updated.category_id == coffee.id
+    assert updated.member_id == member.id
+    assert updated.updated_by_id == partner.id
+    assert await state.get_state() is None
+
+
+async def test_amount_apply_survives_expense_deleted_mid_dialog(
+    session, household, member, category, state
+):
+    expense_id = await make_deleted_mid_dialog(
+        session, household, member, category, EditExpense.amount, state
+    )
+
+    message = FakeMessage(text="300")
+    await enter_new_amount(message, state=state, session=session, member=member)
+
+    assert message.last_reply == MISSING_EXPENSE_TEXT
+    assert await state.get_state() is None
+    assert await get_expense(session, household.id, expense_id) is None
+
+
+async def test_description_apply_survives_expense_deleted_mid_dialog(
+    session, household, member, category, state
+):
+    expense_id = await make_deleted_mid_dialog(
+        session, household, member, category, EditExpense.description, state
+    )
+
+    message = FakeMessage(text="обід")
+    await enter_new_description(message, state=state, session=session, member=member)
+
+    assert message.last_reply == MISSING_EXPENSE_TEXT
+    assert await state.get_state() is None
+    assert await get_expense(session, household.id, expense_id) is None
+
+
+async def test_category_apply_survives_expense_deleted_mid_dialog(
+    session, household, member, category, state
+):
+    coffee = await add_category(session, household.id, "Кава")
+    expense_id = await make_deleted_mid_dialog(
+        session, household, member, category, EditExpense.category, state
+    )
+
+    callback = FakeCallback()
+    await pick_new_category(
+        callback,
+        callback_data=CategoryCb(action="edit", category_id=coffee.id),
+        state=state,
+        session=session,
+        member=member,
+    )
+
+    assert callback.message.last_reply == MISSING_EXPENSE_TEXT
+    assert await state.get_state() is None
+    assert await get_expense(session, household.id, expense_id) is None
