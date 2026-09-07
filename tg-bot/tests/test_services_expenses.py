@@ -2,7 +2,15 @@ from datetime import datetime
 
 from budget_bot.clock import utcnow
 from budget_bot.periods import Period, period_range
-from budget_bot.services.expenses import ExpenseFilters, create_expense, get_expense, list_expenses
+from budget_bot.services.expenses import (
+    UNSET,
+    ExpenseFilters,
+    create_expense,
+    delete_expense,
+    get_expense,
+    list_expenses,
+    update_expense,
+)
 
 NOW = datetime(2026, 9, 9, 9, 0)  # Wednesday 12:00 Kyiv
 
@@ -100,3 +108,50 @@ async def test_get_expense_is_scoped_to_household(session, household, member, ca
 
     assert await get_expense(session, household.id, expense.id) is not None
     assert await get_expense(session, household.id + 1, expense.id) is None
+
+
+async def test_edit_by_partner_keeps_original_author(session, household, member, partner, category):
+    expense = await add(session, household, member, category, amount=250, when=NOW)
+
+    updated = await update_expense(session, expense, editor_id=partner.id, amount=300)
+
+    assert updated.amount == 300
+    assert updated.member_id == member.id
+    assert updated.author.display_name == "Сергій"
+    assert updated.updated_by_id == partner.id
+    assert updated.updated_at is not None
+
+
+async def test_edit_can_change_category_and_description(session, household, member, category):
+    from budget_bot.services.categories import add_category
+
+    other = await add_category(session, household.id, "Кава")
+    expense = await add(session, household, member, category, amount=250, when=NOW, description="a")
+
+    updated = await update_expense(
+        session, expense, editor_id=member.id, category_id=other.id, description="b"
+    )
+
+    assert updated.category.name == "Кава"
+    assert updated.description == "b"
+
+
+async def test_description_can_be_cleared_but_is_kept_when_unset(
+    session, household, member, category
+):
+    expense = await add(session, household, member, category, amount=1, when=NOW, description="a")
+
+    await update_expense(session, expense, editor_id=member.id, amount=2, description=UNSET)
+    assert expense.description == "a"
+
+    await update_expense(session, expense, editor_id=member.id, description=None)
+    assert expense.description is None
+
+
+async def test_delete_removes_expense_from_listings(session, household, member, category):
+    expense = await add(session, household, member, category, amount=10, when=NOW)
+
+    await delete_expense(session, expense)
+
+    assert await get_expense(session, household.id, expense.id) is None
+    assert await list_expenses(session, household.id) == []

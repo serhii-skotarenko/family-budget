@@ -67,3 +67,43 @@ async def list_expenses(
 
     query = query.order_by(Expense.created_at.desc(), Expense.id.desc()).limit(filters.limit)
     return list(await session.scalars(query))
+
+
+class _Unset:
+    """Sentinel type: distinguishes 'leave description alone' from 'clear it'."""
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "UNSET"
+
+
+UNSET = _Unset()
+
+
+async def update_expense(
+    session: AsyncSession,
+    expense: Expense,
+    *,
+    editor_id: int,
+    amount: int | None = None,
+    category_id: int | None = None,
+    description: str | None | _Unset = UNSET,
+) -> Expense:
+    """Apply an edit. The author (member_id) is never reassigned."""
+    if amount is not None:
+        expense.amount = amount
+    if category_id is not None:
+        expense.category_id = category_id
+    if not isinstance(description, _Unset):
+        expense.description = description
+
+    expense.updated_by_id = editor_id
+    expense.updated_at = utcnow()
+
+    await session.flush()
+    await session.refresh(expense)
+    return expense
+
+
+async def delete_expense(session: AsyncSession, expense: Expense) -> None:
+    await session.delete(expense)
+    await session.flush()
