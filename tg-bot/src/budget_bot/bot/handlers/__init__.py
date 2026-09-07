@@ -2,10 +2,12 @@
 
 from aiogram import Router
 
-from budget_bot.bot.handlers import add_expense, categories, common
+from budget_bot.bot.handlers import add_expense, categories, common, expense_list
 
 
 def build_router() -> Router:
     router = Router(name="root")
-    router.include_routers(common.router, add_expense.router, categories.router)
+    router.include_routers(
+        common.router, add_expense.router, categories.router, expense_list.router
+    )
     return router

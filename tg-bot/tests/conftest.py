@@ -8,6 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, User
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from budget_bot.config import Settings
 from budget_bot.db import create_engine, create_session_factory
 from budget_bot.models import Base, Category, Household, Member
 from budget_bot.services.categories import ensure_default_categories, list_categories
@@ -120,3 +121,13 @@ class FakeCallback(CallbackQuery):
 @pytest.fixture
 def state() -> FSMContext:
     return FSMContext(storage=MemoryStorage(), key=StorageKey(bot_id=1, chat_id=1, user_id=111))
+
+
+@pytest.fixture
+def settings() -> Settings:
+    return Settings(
+        _env_file=None,
+        TELEGRAM_BOT_TOKEN="123:ABC",
+        ALLOWED_TELEGRAM_IDS="111,222",
+        RECENT_EXPENSES_LIMIT=10,
+    )
