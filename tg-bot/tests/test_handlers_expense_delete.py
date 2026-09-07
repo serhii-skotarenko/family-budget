@@ -53,6 +53,7 @@ async def test_confirmed_delete_removes_from_lists_and_reports(
     assert await list_expenses(session, household.id) == []
     report = await build_report(session, household.id, period_range(Period.YEAR, utcnow()))
     assert report.total == 0
+    assert len(callback.message.edits) == 1
     assert "видалено" in callback.message.last_edit
 
 
@@ -89,3 +90,4 @@ async def test_deleting_twice_reports_alert(session, household, member, category
     )
 
     assert second.answers[-1][1] is True
+    assert second.message.edits == []
