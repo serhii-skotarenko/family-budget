@@ -48,7 +48,7 @@ async def test_access_middleware_blocks_unknown_user_on_callback(session):
     callback = FakeCallback(user_id=999)
     await middleware(handler, callback, {"session": session})
 
-    assert callback.answers[-1][0] == DENIED_TEXT
+    assert callback.answers[-1] == (DENIED_TEXT, True)
 
 
 async def test_db_session_middleware_commits_on_success(tmp_path):
@@ -75,6 +75,7 @@ async def test_db_session_middleware_rolls_back_on_error(tmp_path):
 
     async def handler(event, data):
         data["session"].add(Household(name="Сім'я"))
+        await data["session"].flush()
         raise RuntimeError("boom")
 
     with contextlib.suppress(RuntimeError):

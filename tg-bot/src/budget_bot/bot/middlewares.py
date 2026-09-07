@@ -34,8 +34,10 @@ class DbSessionMiddleware(BaseMiddleware):
 class AccessMiddleware(BaseMiddleware):
     """Rejects updates from Telegram IDs outside the whitelist.
 
-    Runs on messages and callback queries only, so ``event.from_user`` is
-    always present for allowed traffic.
+    Runs on messages and callback queries only. ``event.from_user`` can
+    still be ``None`` for some message types (e.g. a post automatically
+    forwarded from a linked channel); ``_deny`` treats that the same as an
+    unrecognized user.
     """
 
     def __init__(self, allowed_ids: frozenset[int], household_name: str) -> None:

@@ -5,6 +5,7 @@ import pytest_asyncio
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import CallbackQuery, User
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.db import create_engine, create_session_factory
@@ -84,14 +85,33 @@ class FakeMessage:
         return self.edits[-1][0]
 
 
-class FakeCallback:
-    """Minimal stand-in for aiogram CallbackQuery."""
+class FakeCallback(CallbackQuery):
+    """Stand-in for aiogram CallbackQuery, built on the real model.
+
+    Subclassing the real ``CallbackQuery`` (via ``model_construct``, which
+    skips its pydantic validation so a ``FakeMessage`` can stand in for
+    ``message``) keeps ``isinstance(event, CallbackQuery)`` — the branch
+    ``AccessMiddleware._deny`` uses to choose ``show_alert=True`` — true
+    under test. A plain duck-typed double would always fail that check and
+    silently exercise the wrong branch.
+    """
 
     def __init__(self, data: str = "", user_id: int = 111, first_name: str = "Сергій") -> None:
-        self.data = data
-        self.message = FakeMessage(user_id=user_id, first_name=first_name)
-        self.from_user = SimpleNamespace(id=user_id, first_name=first_name)
-        self.answers: list[tuple[str, bool]] = []
+        user = User(id=user_id, is_bot=False, first_name=first_name)
+        message = FakeMessage(user_id=user_id, first_name=first_name)
+        built = CallbackQuery.model_construct(
+            id="fake-callback-id",
+            from_user=user,
+            chat_instance="fake-chat-instance",
+            message=message,
+            data=data,
+        )
+        self.__dict__.update(built.__dict__)
+        object.__setattr__(self, "__pydantic_fields_set__", built.__pydantic_fields_set__)
+        object.__setattr__(self, "__pydantic_extra__", built.__pydantic_extra__)
+        object.__setattr__(self, "__pydantic_private__", built.__pydantic_private__)
+        answers: list[tuple[str, bool]] = []
+        object.__setattr__(self, "answers", answers)
 
     async def answer(self, text: str = "", show_alert: bool = False, **kwargs) -> None:
         self.answers.append((text, show_alert))
