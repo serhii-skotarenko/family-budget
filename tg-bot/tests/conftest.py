@@ -1,11 +1,11 @@
-from types import SimpleNamespace
+from datetime import datetime
 
 import pytest
 import pytest_asyncio
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, User
+from aiogram.types import CallbackQuery, Chat, Message, User
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.config import Settings
@@ -60,14 +60,37 @@ async def category(session, household) -> Category:
     return (await list_categories(session, household.id))[0]  # Їжа
 
 
-class FakeMessage:
-    """Minimal stand-in for aiogram Message: records what the bot sent back."""
+class FakeMessage(Message):
+    """Minimal stand-in for aiogram Message: records what the bot sent back.
 
-    def __init__(self, text: str = "", user_id: int = 111, first_name: str = "Сергій") -> None:
-        self.text = text
-        self.from_user = SimpleNamespace(id=user_id, first_name=first_name)
-        self.replies: list[tuple[str, dict]] = []
-        self.edits: list[tuple[str, dict]] = []
+    Subclassing the real ``Message`` (via ``model_construct``, mirroring
+    ``FakeCallback`` below) keeps ``isinstance(message, Message)`` — the
+    check ``budget_bot.bot.replies.edit_or_answer`` uses to choose
+    ``edit_text`` over ``answer`` — true under test. A plain duck-typed
+    double would always fail that check and silently exercise the wrong
+    branch.
+    """
+
+    def __init__(
+        self,
+        text: str = "",
+        user_id: int = 111,
+        first_name: str = "Сергій",
+        chat_type: str = "private",
+    ) -> None:
+        user = User(id=user_id, is_bot=False, first_name=first_name)
+        chat = Chat(id=user_id, type=chat_type)
+        built = Message.model_construct(
+            message_id=1, date=datetime.now(), chat=chat, from_user=user, text=text
+        )
+        self.__dict__.update(built.__dict__)
+        object.__setattr__(self, "__pydantic_fields_set__", built.__pydantic_fields_set__)
+        object.__setattr__(self, "__pydantic_extra__", built.__pydantic_extra__)
+        object.__setattr__(self, "__pydantic_private__", built.__pydantic_private__)
+        replies: list[tuple[str, dict]] = []
+        edits: list[tuple[str, dict]] = []
+        object.__setattr__(self, "replies", replies)
+        object.__setattr__(self, "edits", edits)
 
     async def answer(self, text: str, **kwargs):
         self.replies.append((text, kwargs))
@@ -97,9 +120,15 @@ class FakeCallback(CallbackQuery):
     silently exercise the wrong branch.
     """
 
-    def __init__(self, data: str = "", user_id: int = 111, first_name: str = "Сергій") -> None:
+    def __init__(
+        self,
+        data: str = "",
+        user_id: int = 111,
+        first_name: str = "Сергій",
+        chat_type: str = "private",
+    ) -> None:
         user = User(id=user_id, is_bot=False, first_name=first_name)
-        message = FakeMessage(user_id=user_id, first_name=first_name)
+        message = FakeMessage(user_id=user_id, first_name=first_name, chat_type=chat_type)
         built = CallbackQuery.model_construct(
             id="fake-callback-id",
             from_user=user,
