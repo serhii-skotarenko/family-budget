@@ -3398,7 +3398,9 @@ async def enter_amount(
     try:
         amount = parse_amount(message.text or "")
     except AmountError as error:
-        await message.answer(f"⚠️ {error}", reply_markup=cancel_keyboard())
+        # Error text is escaped like any other interpolation: the rule is absolute
+        # so a future message that echoes the user's input cannot leak markup.
+        await message.answer(f"⚠️ {escape(str(error))}", reply_markup=cancel_keyboard())
         return
 
     await state.update_data(amount=amount)
@@ -4039,7 +4041,7 @@ async def enter_custom_range(
     try:
         parse_custom_range(raw)
     except ValueError as error:
-        await message.answer(f"⚠️ {error}", reply_markup=cancel_keyboard())
+        await message.answer(f"⚠️ {escape(str(error))}", reply_markup=cancel_keyboard())
         return
 
     await state.update_data(period="custom", custom_range=raw)
