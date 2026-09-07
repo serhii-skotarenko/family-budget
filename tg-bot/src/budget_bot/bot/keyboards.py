@@ -89,6 +89,17 @@ def expense_card_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def delete_confirm_keyboard(expense_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🗑 Так, видалити",
+        callback_data=ExpenseCb(action="delete_yes", expense_id=expense_id),
+    )
+    builder.button(text="↩️ Ні", callback_data=ExpenseCb(action="view", expense_id=expense_id))
+    builder.adjust(2)
+    return builder.as_markup()
+
+
 def edit_fields_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="💸 Сума", callback_data=EditFieldCb(field="amount", expense_id=expense_id))
