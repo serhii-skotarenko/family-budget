@@ -1419,9 +1419,20 @@ git commit -m "feat: add category service with default seeding and duplicate det
 **Interfaces:**
 - Consumes: `budget_bot.services.categories.ensure_default_categories`, `budget_bot.models.{Household, Member}`.
 - Produces: `budget_bot.services.access` з
+  `SINGLETON_HOUSEHOLD_ID: int = 1`,
   `get_or_create_household(session, name: str) -> Household`,
   `resolve_member(session, *, telegram_id: int, display_name: str, household_name: str) -> Member`,
   `list_members(session, household_id: int) -> list[Member]`.
+
+> **Виправлено після рев'ю (2026-09-07).** Обидві вставки нижче — check-then-act без
+> захисту. `Household` не має жодного unique-констрейнта, тож два одночасні перші
+> контакти створювали **два** домогосподарства мовчки, без помилки, і користувачі
+> назавжди опинялись у різних бюджетах. Вставка `Member` падала сирим `IntegrityError`
+> на unique `telegram_id`. Рішення: домогосподарство створюється з явним первинним
+> ключем `SINGLETON_HOUSEHOLD_ID = 1` (PK уже унікальний — міграція не змінюється),
+> обидві вставки загорнуті в `async with session.begin_nested():` (SAVEPOINT), а на
+> `IntegrityError` робиться перевибір наявного рядка. Наступні задачі не повинні
+> розраховувати на автоінкрементні id домогосподарства.
 
 - [ ] **Step 1: Написати падаючий тест**
 
