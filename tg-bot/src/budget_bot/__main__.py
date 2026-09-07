@@ -7,12 +7,14 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, ErrorEvent, Update
 
 from budget_bot.bot.handlers import build_router
 from budget_bot.bot.middlewares import AccessMiddleware, DbSessionMiddleware
 from budget_bot.config import Settings
 from budget_bot.db import create_engine, create_session_factory
+
+logger = logging.getLogger(__name__)
 
 BOT_COMMANDS = [
     BotCommand(command="add", description="Додати витрату"),
@@ -22,6 +24,38 @@ BOT_COMMANDS = [
     BotCommand(command="categories", description="Категорії"),
     BotCommand(command="cancel", description="Перервати діалог"),
 ]
+
+APOLOGY_TEXT = "⚠️ Виникла помилка. Спробуйте ще раз або /cancel."
+
+
+def _chat_id(update: Update) -> int | None:
+    if update.message is not None:
+        return update.message.chat.id
+    if update.callback_query is not None and update.callback_query.message is not None:
+        return update.callback_query.message.chat.id
+    return None
+
+
+async def handle_error(event: ErrorEvent, bot: Bot) -> None:
+    """Last-resort catch for exceptions no router or middleware handled.
+
+    Registered on ``dispatcher.errors`` so an unhandled exception no longer
+    just logs a traceback and leaves the user without a reply. Must never
+    itself raise — that would propagate out of aiogram's ErrorsMiddleware
+    and abort update processing.
+    """
+    logger.exception(
+        "Unhandled error while processing update %s",
+        event.update.update_id,
+        exc_info=event.exception,
+    )
+    chat_id = _chat_id(event.update)
+    if chat_id is None:
+        return
+    try:
+        await bot.send_message(chat_id, APOLOGY_TEXT)
+    except Exception:  # noqa: BLE001 - notifying about the error must not itself raise
+        logger.exception("Failed to notify chat %s about an error", chat_id)
 
 
 async def main() -> None:
@@ -40,6 +74,7 @@ async def main() -> None:
     # dialogs, never saved data.
     dispatcher = Dispatcher(storage=MemoryStorage())
     dispatcher["settings"] = settings
+    dispatcher.errors.register(handle_error)
 
     dispatcher.update.outer_middleware(DbSessionMiddleware(session_factory))
     access = AccessMiddleware(settings.allowed_telegram_ids, settings.household_name)

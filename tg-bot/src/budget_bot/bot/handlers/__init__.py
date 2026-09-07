@@ -9,6 +9,7 @@ from budget_bot.bot.handlers import (
     expense_delete,
     expense_edit,
     expense_list,
+    fallback,
     filters,
     reports,
 )
@@ -25,5 +26,7 @@ def build_router() -> Router:
         expense_edit.router,
         expense_delete.router,
         reports.router,
+        # Last: only fires for updates nothing above claimed.
+        fallback.router,
     )
     return router
