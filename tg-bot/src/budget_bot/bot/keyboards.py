@@ -5,8 +5,9 @@ from collections.abc import Sequence
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
-from budget_bot.bot.callbacks import CategoryCb, ExpenseCb, FlowCb
-from budget_bot.models import Category, Expense
+from budget_bot.bot.callbacks import CategoryCb, ExpenseCb, FilterCb, FlowCb
+from budget_bot.models import Category, Expense, Member
+from budget_bot.periods import PERIOD_TITLES, Period
 
 BTN_ADD = "➕ Витрата"
 BTN_LIST = "📋 Список"
@@ -85,4 +86,39 @@ def expense_card_keyboard(expense_id: int) -> InlineKeyboardMarkup:
         text="🗑 Видалити", callback_data=ExpenseCb(action="delete", expense_id=expense_id)
     )
     builder.adjust(2)
+    return builder.as_markup()
+
+
+def filter_periods_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for period in (Period.TODAY, Period.WEEK, Period.MONTH):
+        builder.button(
+            text=PERIOD_TITLES[period],
+            callback_data=FilterCb(step="period", value=period.value),
+        )
+    builder.button(
+        text="📅 Довільний період", callback_data=FilterCb(step="period", value="custom")
+    )
+    builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
+    builder.adjust(2, 2, 1)
+    return builder.as_markup()
+
+
+def filter_categories_keyboard(categories: Sequence[Category]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Усі категорії", callback_data=FilterCb(step="category", value="all"))
+    for item in categories:
+        builder.button(text=item.name, callback_data=FilterCb(step="category", value=str(item.id)))
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def filter_members_keyboard(members: Sequence[Member]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Усі учасники", callback_data=FilterCb(step="member", value="all"))
+    for item in members:
+        builder.button(
+            text=item.display_name, callback_data=FilterCb(step="member", value=str(item.id))
+        )
+    builder.adjust(1, 2)
     return builder.as_markup()
