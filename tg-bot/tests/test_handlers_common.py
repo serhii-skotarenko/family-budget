@@ -1,4 +1,3 @@
-from budget_bot.bot.handlers import build_router
 from budget_bot.bot.handlers.common import cb_cancel, cmd_cancel, cmd_start
 from budget_bot.bot.keyboards import BTN_ADD, main_menu
 from tests.conftest import FakeCallback, FakeMessage
@@ -61,5 +60,7 @@ def test_main_menu_has_add_button():
     assert BTN_ADD in labels
 
 
-def test_build_router_returns_router():
-    assert build_router().name == "root"
+# build_router() is exercised by tests/test_dispatch_smoke.py instead of here:
+# it attaches each feature router (a module-level singleton) to the "root"
+# router it returns, and aiogram raises if a router is attached to a second
+# parent — so it can only be called once per test process.
