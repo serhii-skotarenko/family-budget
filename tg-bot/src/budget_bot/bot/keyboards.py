@@ -27,3 +27,9 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
     return builder.as_markup()
+
+
+def add_category_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Додати категорію", callback_data=FlowCb(action="add_category"))
+    return builder.as_markup()
