@@ -153,3 +153,24 @@ async def test_custom_range_is_validated_and_applied(session, household, member,
     )
 
     assert "500" in result.message.last_reply
+
+
+async def test_custom_range_error_is_escaped(monkeypatch, session, member, state):
+    def raise_with_markup(raw: str):
+        raise ValueError("<b>зла розмітка</b>")
+
+    monkeypatch.setattr("budget_bot.bot.handlers.filters.parse_custom_range", raise_with_markup)
+    await cmd_filter(FakeMessage(text="/filter"), state=state)
+    await choose_period(
+        FakeCallback(),
+        callback_data=FilterCb(step="period", value="custom"),
+        state=state,
+        session=session,
+        member=member,
+    )
+
+    bad = FakeMessage(text="будь-що")
+    await enter_custom_range(bad, state=state, session=session, member=member)
+
+    assert "&lt;b&gt;зла розмітка&lt;/b&gt;" in bad.last_reply
+    assert "<b>зла розмітка</b>" not in bad.last_reply

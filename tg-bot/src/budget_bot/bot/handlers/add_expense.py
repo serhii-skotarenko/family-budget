@@ -50,7 +50,7 @@ async def enter_amount(
     try:
         amount = parse_amount(message.text or "")
     except AmountError as error:
-        await message.answer(f"⚠️ {error}", reply_markup=cancel_keyboard())
+        await message.answer(f"⚠️ {escape(str(error))}", reply_markup=cancel_keyboard())
         return
 
     await state.update_data(amount=amount)

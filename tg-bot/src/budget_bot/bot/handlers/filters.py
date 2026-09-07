@@ -1,5 +1,6 @@
 """/filter: period → category → author, then the matching list."""
 
+from html import escape
 from typing import Any
 
 from aiogram import F, Router
@@ -75,7 +76,7 @@ async def enter_custom_range(
     try:
         parse_custom_range(raw)
     except ValueError as error:
-        await message.answer(f"⚠️ {error}", reply_markup=cancel_keyboard())
+        await message.answer(f"⚠️ {escape(str(error))}", reply_markup=cancel_keyboard())
         return
 
     await state.update_data(period="custom", custom_range=raw)
