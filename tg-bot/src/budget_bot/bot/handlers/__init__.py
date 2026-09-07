@@ -10,6 +10,7 @@ from budget_bot.bot.handlers import (
     expense_edit,
     expense_list,
     filters,
+    reports,
 )
 
 
@@ -23,5 +24,6 @@ def build_router() -> Router:
         filters.router,
         expense_edit.router,
         expense_delete.router,
+        reports.router,
     )
     return router

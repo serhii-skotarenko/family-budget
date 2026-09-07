@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
-from budget_bot.bot.callbacks import CategoryCb, EditFieldCb, ExpenseCb, FilterCb, FlowCb
+from budget_bot.bot.callbacks import CategoryCb, EditFieldCb, ExpenseCb, FilterCb, FlowCb, ReportCb
 from budget_bot.models import Category, Expense, Member
 from budget_bot.periods import PERIOD_TITLES, Period
 
@@ -146,4 +146,12 @@ def filter_members_keyboard(members: Sequence[Member]) -> InlineKeyboardMarkup:
             text=item.display_name, callback_data=FilterCb(step="member", value=str(item.id))
         )
     builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def report_periods_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for period in (Period.WEEK, Period.MONTH, Period.YEAR):
+        builder.button(text=PERIOD_TITLES[period], callback_data=ReportCb(period=period.value))
+    builder.adjust(1)
     return builder.as_markup()
