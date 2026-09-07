@@ -86,6 +86,24 @@ async def test_zero_amount_is_rejected(session, member, category, state):
     assert "більшою за нуль" in message.last_reply
 
 
+async def test_double_tap_save_inserts_exactly_once(session, member, category, state):
+    await state.set_state(AddExpense.confirm)
+    await state.update_data(amount=100, category_id=category.id, category_name=category.name)
+
+    first = FakeCallback()
+    await save_expense(first, state=state, session=session, member=member)
+    assert await state.get_state() is None
+    assert "Записано" in first.message.last_edit
+
+    second = FakeCallback()
+    await save_expense(second, state=state, session=session, member=member)
+
+    saved = await list_expenses(session, member.household_id)
+    assert len(saved) == 1
+    assert second.message.edits == []
+    assert "уже збережено" in second.answers[-1][0].lower()
+
+
 async def test_unknown_category_is_reported(session, member, category, state):
     await state.set_state(AddExpense.category)
     await state.update_data(amount=100)

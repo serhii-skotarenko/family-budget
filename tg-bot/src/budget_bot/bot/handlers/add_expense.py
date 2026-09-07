@@ -18,6 +18,7 @@ from budget_bot.bot.keyboards import (
     confirm_keyboard,
     description_keyboard,
 )
+from budget_bot.bot.replies import edit_or_answer
 from budget_bot.bot.texts import MAX_DESCRIPTION_LENGTH
 from budget_bot.formatting import format_saved_expense
 from budget_bot.models import Member
@@ -110,6 +111,20 @@ async def save_expense(
     callback: CallbackQuery, state: FSMContext, session: AsyncSession, member: Member
 ) -> None:
     data = await state.get_data()
+    if "category_id" not in data:
+        # Either a legitimate double-tap of "✅ Зберегти", or a stale button
+        # from an already-completed dialog. Either way, don't insert again.
+        await callback.answer("Запис уже збережено.")
+        return
+
+    # Clear the state before writing: aiogram processes updates as concurrent
+    # tasks, so two taps can both reach the check above before either clears
+    # the state. Clearing first narrows that race to the gap between these
+    # two awaits instead of the much wider read-DB-write-clear window — it
+    # does not close the window entirely, but MemoryStorage's in-process
+    # dict access is fast enough that this is an acceptable residual risk
+    # for a two-user household.
+    await state.clear()
     expense = await create_expense(
         session,
         household_id=member.household_id,
@@ -118,6 +133,5 @@ async def save_expense(
         amount=data["amount"],
         description=data.get("description"),
     )
-    await state.clear()
-    await callback.message.edit_text(format_saved_expense(expense))
+    await edit_or_answer(callback, format_saved_expense(expense))
     await callback.answer()
