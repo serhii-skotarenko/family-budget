@@ -29,10 +29,19 @@ cp .env.example .env   # заповнити TELEGRAM_BOT_TOKEN і ALLOWED_TELEGR
 ## Docker
 
 ```bash
+cp .env.example .env   # заповнити TELEGRAM_BOT_TOKEN і ALLOWED_TELEGRAM_IDS
 docker compose up --build
 ```
 
 Міграції застосовуються автоматично при старті контейнера.
+
+**Не задавайте `DATABASE_PATH` у `.env`, коли деплоїте через Docker/PaaS.**
+Образ уже задає `DATABASE_PATH=/data/budget.sqlite3`, що вказує на
+змонтований том. `docker-compose.yml` це переживає лише тому, що
+`environment:` там пересилює `env_file:`; голий `docker run --env-file .env`
+або деплой на PaaS-провайдер (Railway/Fly.io) — саме те, для чого призначений
+розділ «Деплой» нижче — цю змінну підхопить і покладе SQLite на файлову
+систему контейнера, де її знищить перший же редеплой.
 
 ## Деплой
 
@@ -42,7 +51,9 @@ docker compose up --build
 1. **Persistent volume, змонтований у `/data`** — там лежить `budget.sqlite3`.
    Без тому дані зникнуть при першому ж редеплої.
 2. **Змінні середовища:** `TELEGRAM_BOT_TOKEN`, `ALLOWED_TELEGRAM_IDS`,
-   опційно `HOUSEHOLD_NAME`, `DATABASE_PATH`, `RECENT_EXPENSES_LIMIT`.
+   опційно `HOUSEHOLD_NAME`, `RECENT_EXPENSES_LIMIT`. **Не задавайте
+   `DATABASE_PATH`** — образ уже вказує ним на змонтований том; перевизначення
+   переносить базу на файлову систему контейнера й губить дані при редеплої.
 3. **Рівно один інстанс.** Бот працює через long polling; два інстанси на
    одному токені почнуть конфліктувати за `getUpdates`.
 4. **HTTP-порт не потрібен** — це worker-процес, не веб-сервіс. Якщо платформа
@@ -55,5 +66,5 @@ docker compose up --build
 | `TELEGRAM_BOT_TOKEN` | так | — | Токен від @BotFather |
 | `ALLOWED_TELEGRAM_IDS` | так | — | Telegram ID через кому |
 | `HOUSEHOLD_NAME` | ні | `Сім'я` | Назва домогосподарства |
-| `DATABASE_PATH` | ні | `data/budget.sqlite3` | Шлях до файлу SQLite |
+| `DATABASE_PATH` | ні | `data/budget.sqlite3` | Шлях до файлу SQLite. **У Docker/на PaaS не перевизначайте** — образ задає `/data/budget.sqlite3` (змонтований том); інше значення губить дані при редеплої |
 | `RECENT_EXPENSES_LIMIT` | ні | `10` | Скільки записів показує `/list` |
