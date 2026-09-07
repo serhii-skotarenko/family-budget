@@ -15,6 +15,17 @@ async def test_start_greets_by_display_name_and_lists_commands(member):
     assert kwargs["reply_markup"] is not None
 
 
+async def test_start_escapes_html_in_the_display_name(member):
+    member.display_name = "<script>hack</script>"
+    message = FakeMessage(text="/start")
+
+    await cmd_start(message, member=member)
+
+    text = message.last_reply
+    assert "&lt;script&gt;hack&lt;/script&gt;" in text
+    assert "<script>hack</script>" not in text
+
+
 async def test_cancel_without_active_dialog(state):
     message = FakeMessage(text="/cancel")
 

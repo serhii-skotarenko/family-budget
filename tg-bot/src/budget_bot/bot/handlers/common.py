@@ -1,5 +1,7 @@
 """/start, /help and the global /cancel escape hatch."""
 
+from html import escape
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -7,6 +9,7 @@ from aiogram.types import CallbackQuery, Message
 
 from budget_bot.bot.callbacks import FlowCb
 from budget_bot.bot.keyboards import main_menu
+from budget_bot.bot.replies import edit_or_answer
 from budget_bot.models import Member
 
 router = Router(name="common")
@@ -26,7 +29,7 @@ HELP_TEXT = (
 @router.message(CommandStart())
 async def cmd_start(message: Message, member: Member) -> None:
     await message.answer(
-        f"👋 Привіт, {member.display_name}! Це бот сімейного бюджету.\n\n{HELP_TEXT}",
+        f"👋 Привіт, {escape(member.display_name)}! Це бот сімейного бюджету.\n\n{HELP_TEXT}",
         reply_markup=main_menu(),
     )
 
@@ -47,5 +50,5 @@ async def cmd_cancel(message: Message, state: FSMContext) -> None:
 @router.callback_query(FlowCb.filter(F.action == "cancel"), StateFilter("*"))
 async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.edit_text("❌ Скасовано.")
+    await edit_or_answer(callback, "❌ Скасовано.")
     await callback.answer()

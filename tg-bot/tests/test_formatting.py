@@ -80,6 +80,16 @@ async def test_card_without_edit_has_no_editor_line(session, household, member, 
     assert "Змінив(ла)" not in card
 
 
+async def test_card_author_line_is_html_escaped(session, household, member, category):
+    member.display_name = "<b>hack</b>"
+    expense = await make(session, household, member, category)
+
+    card = format_expense_card(expense)
+
+    assert "&lt;b&gt;hack&lt;/b&gt;" in card
+    assert "<b>hack</b>" not in card
+
+
 async def test_saved_expense_confirmation(session, household, member, category):
     expense = await make(session, household, member, category)
 
@@ -100,6 +110,22 @@ def test_report_with_data():
     assert "1\u00a0000\u00a0₴" in text
     assert "• Їжа — 800\u00a0₴ (80.0%)" in text
     assert "• Сергій — 600\u00a0₴" in text
+
+
+def test_report_category_and_member_labels_are_html_escaped():
+    report = Report(
+        period_label="поточний рік (2026)",
+        total=100,
+        by_category=[CategoryTotal("<b>Їжа</b>", 100, 100.0)],
+        by_member=[MemberTotal("<i>Сергій</i>", 100)],
+    )
+
+    text = format_report(report)
+
+    assert "&lt;b&gt;Їжа&lt;/b&gt;" in text
+    assert "<b>Їжа</b>" not in text
+    assert "&lt;i&gt;Сергій&lt;/i&gt;" in text
+    assert "<i>Сергій</i>" not in text
 
 
 def test_empty_report_says_so_without_error():
