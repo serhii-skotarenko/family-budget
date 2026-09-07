@@ -2453,14 +2453,31 @@ class FakeMessage:
         return self.edits[-1][0]
 
 
-class FakeCallback:
-    """Minimal stand-in for aiogram CallbackQuery."""
+class FakeCallback(CallbackQuery):
+    """Stand-in for aiogram CallbackQuery, built on the real model.
+
+    It must subclass the real ``CallbackQuery``: ``AccessMiddleware._deny``
+    branches on ``isinstance(event, CallbackQuery)`` to choose
+    ``show_alert=True``, and a duck-typed double would fail that check and
+    silently exercise the message branch instead — a green test proving
+    nothing. ``model_construct`` skips pydantic validation so a
+    ``FakeMessage`` can stand in for ``message``.
+    """
 
     def __init__(self, data: str = "", user_id: int = 111, first_name: str = "Сергій") -> None:
-        self.data = data
-        self.message = FakeMessage(user_id=user_id, first_name=first_name)
-        self.from_user = SimpleNamespace(id=user_id, first_name=first_name)
-        self.answers: list[tuple[str, bool]] = []
+        user = User(id=user_id, is_bot=False, first_name=first_name)
+        built = CallbackQuery.model_construct(
+            id="fake-callback-id",
+            from_user=user,
+            chat_instance="fake-chat-instance",
+            message=FakeMessage(user_id=user_id, first_name=first_name),
+            data=data,
+        )
+        self.__dict__.update(built.__dict__)
+        object.__setattr__(self, "__pydantic_fields_set__", built.__pydantic_fields_set__)
+        object.__setattr__(self, "__pydantic_extra__", built.__pydantic_extra__)
+        object.__setattr__(self, "__pydantic_private__", built.__pydantic_private__)
+        object.__setattr__(self, "answers", [])
 
     async def answer(self, text: str = "", show_alert: bool = False, **kwargs) -> None:
         self.answers.append((text, show_alert))
@@ -2526,7 +2543,8 @@ async def test_access_middleware_blocks_unknown_user_on_callback(session):
     callback = FakeCallback(user_id=999)
     await middleware(handler, callback, {"session": session})
 
-    assert callback.answers[-1][0] == DENIED_TEXT
+    # Assert show_alert too: a text-only check passes through either branch.
+    assert callback.answers[-1] == (DENIED_TEXT, True)
 
 
 async def test_db_session_middleware_commits_on_success(tmp_path):
