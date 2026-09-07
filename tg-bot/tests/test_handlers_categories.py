@@ -53,3 +53,16 @@ async def test_empty_name_is_rejected(session, member, category, state):
 
     assert "порожньою" in message.last_reply
     assert await state.get_state() == AddCategory.name
+
+
+async def test_duplicate_error_escapes_the_existing_category_name(session, member, state):
+    await enter_category_name(
+        FakeMessage(text="<b>Кава</b>"), state=state, session=session, member=member
+    )
+    await state.set_state(AddCategory.name)
+
+    message = FakeMessage(text="<B>кава</B>")
+    await enter_category_name(message, state=state, session=session, member=member)
+
+    assert "<b>Кава</b>" not in message.last_reply
+    assert "&lt;b&gt;Кава&lt;/b&gt;" in message.last_reply

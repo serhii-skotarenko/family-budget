@@ -52,7 +52,9 @@ async def enter_category_name(
         category = await add_category(session, member.household_id, message.text or "")
     except (DuplicateCategoryError, CategoryNameError) as error:
         # Stay in the same state so the user can retype without restarting.
-        await message.answer(f"⚠️ {error}", reply_markup=cancel_keyboard())
+        # escape(): DuplicateCategoryError embeds another user's raw category
+        # name, so this text is not safe to interpolate unescaped.
+        await message.answer(f"⚠️ {escape(str(error))}", reply_markup=cancel_keyboard())
         return
 
     await state.clear()
