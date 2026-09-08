@@ -65,31 +65,57 @@ Railway зведене до `railway.json` і налаштувань серві�
 
 1. **Створіть проєкт** з цього репозиторію: `New Project` → `Deploy from GitHub repo`.
 2. **Service → Settings → Root Directory:** `tg-bot`.
-   Без цього Railway шукатиме Dockerfile у корені репозиторію й не знайде.
-3. **Config-as-code path:** `/tg-bot/railway.json`.
-   Шлях до конфіга задається від кореня репозиторію і **не** враховує Root
-   Directory — це окреме правило Railway, легко проґавити.
-4. **Створіть том** (`⌘K` → `Create Volume`), прикріпіть до сервісу,
+   Це найважливіший крок. Без нього білдер бачить корінь репозиторію, не
+   знаходить там Dockerfile, падає назад на автодетект (Railpack) і завершується
+   помилкою — у логах буде дерево з `docs/` і `tg-bot/` та `railpack prepare
+   exited with an error`.
+3. **Створіть том** (`⌘K` → `Create Volume`), прикріпіть до сервісу,
    **Mount path: `/data`**. Каталог не мусить існувати в образі.
-5. **Variables** — додайте:
+4. **Variables** — додайте:
    - `TELEGRAM_BOT_TOKEN` — токен від @BotFather
    - `ALLOWED_TELEGRAM_IDS` — два Telegram ID через кому
    - `HOUSEHOLD_NAME` (опційно)
    - `RECENT_EXPENSES_LIMIT` (опційно)
-6. **Deploy.** У логах має зʼявитись `Applying database migrations...`,
+5. **Deploy.** У логах має зʼявитись `Applying database migrations...`,
    далі `Run polling for bot @…`.
 
-### Що варто знати про Railway
+### Чому в Dockerfile немає `VOLUME`
 
-- **Реплік бути не може.** Railway забороняє репліки для сервісів із томом —
-  тут це на користь: саме один інстанс нам і потрібен.
-- **Не використовуйте Pre-Deploy Command для міграцій.** Під час pre-deploy
-  том ще не змонтований, і `alembic upgrade head` створив би базу не там.
-  Міграції вже виконує `docker-entrypoint.sh` на старті контейнера, коли том
-  на місці.
-- **Публічний домен не потрібен** — не вмикайте `Generate Domain` і не
-  налаштовуйте health check на HTTP-порт: бот нічого не слухає.
-- **Розмір тому:** Hobby — 5 ГБ. Для двох користувачів вистачить на роки.
+Білдер Railway **відхиляє** директиву `VOLUME`:
+
+```
+dockerfile invalid: docker VOLUME at Line 20 is not supported, use Railway Volumes
+```
+
+У документації про це не сказано — виявляється лише на невдалому білді. Том
+оголошує платформа: у Railway це прикріплений volume із mount path `/data`, а
+локально — `budget-data:/data` у `docker-compose.yml`. На персистентність
+відсутність директиви не впливає: `VOLUME` створює анонімний том лише тоді,
+коли нічого не змонтовано.
+
+### Конфігурація як код
+
+Railway перевів config-as-code (`railway.json` / `railway.toml`) у застарілі:
+**нові сервіси його взагалі не читають**, а наявні файли перестануть діяти
+2026-12-01. Замість нього — Infrastructure as Code у `.railway/railway.ts`.
+
+Файл у репозиторії згенеровано з фактичного стану проєкту
+(`railway config pull`) і доповнено `rootDirectory`. Секретів у ньому немає:
+змінні позначені `preserve()`, тобто значення лишаються в Railway.
+
+Щоб ним користуватись, потрібен Node-тулчейн у корені репозиторію:
+
+```bash
+npm install railway      # ставить SDK, який імпортує railway.ts
+railway config plan      # показує діф із поточним станом
+railway config apply     # застосовує
+```
+
+**Це поки не перевірено на практиці** — SDK не встановлювали, щоб не тягнути
+`node_modules` у Python-репозиторій заради інфраструктурного конфіга. Наразі
+сервіс налаштований імперативно (том і змінні — через CLI, Root Directory —
+через дашборд). Файл лишено як опис бажаного стану й точка входу, якщо
+захочете перейти на IaC повністю.
 
 ### Бекап
 
