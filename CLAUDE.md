@@ -34,4 +34,7 @@
 
 ## Статус
 
-Репозиторій щойно створено (`tg-bot/`, `dashboard/`, `docs/`), імплементація ще не почата.
+MVP бота реалізовано в `tg-bot/` (aiogram 3 + SQLAlchemy 2 async + SQLite/Alembic,
+запуск через Docker). `dashboard/` — усе ще порожньо. Деплой-провайдер ще не обрано:
+образ портативний, потрібен лише persistent volume на `/data` і env-змінні
+(див. `tg-bot/README.md`).

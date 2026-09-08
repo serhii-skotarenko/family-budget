@@ -665,14 +665,16 @@ Expected: FAIL — alembic не налаштований (`No config file 'alemb
 cd tg-bot && .venv/bin/alembic init -t async alembic
 ```
 
-Далі відредагувати `tg-bot/alembic.ini` — прибрати рядок `sqlalchemy.url` (URL береться з env) і залишити:
+Далі **точково відредагувати** згенерований `tg-bot/alembic.ini` — не переписувати
+файл цілком. У секції `[alembic]`:
 
-```ini
-[alembic]
-script_location = alembic
-prepend_sys_path = src
-file_template = %%(rev)s_%%(slug)s
-```
+- видалити рядок `sqlalchemy.url = ...` (URL складається з `DATABASE_PATH` у `env.py`);
+- переконатись, що є `script_location = alembic` і `prepend_sys_path = src`;
+- додати `file_template = %%(rev)s_%%(slug)s`.
+
+**Секції логування (`[loggers]`, `[handlers]`, `[formatters]` і похідні), які згенерував
+`alembic init`, треба лишити на місці.** `env.py` викликає
+`fileConfig(config.config_file_name)`, і без них Alembic упаде з `KeyError: 'formatters'`.
 
 `tg-bot/alembic/env.py` — замінити повністю на:
 
@@ -1417,9 +1419,20 @@ git commit -m "feat: add category service with default seeding and duplicate det
 **Interfaces:**
 - Consumes: `budget_bot.services.categories.ensure_default_categories`, `budget_bot.models.{Household, Member}`.
 - Produces: `budget_bot.services.access` з
+  `SINGLETON_HOUSEHOLD_ID: int = 1`,
   `get_or_create_household(session, name: str) -> Household`,
   `resolve_member(session, *, telegram_id: int, display_name: str, household_name: str) -> Member`,
   `list_members(session, household_id: int) -> list[Member]`.
+
+> **Виправлено після рев'ю (2026-09-07).** Обидві вставки нижче — check-then-act без
+> захисту. `Household` не має жодного unique-констрейнта, тож два одночасні перші
+> контакти створювали **два** домогосподарства мовчки, без помилки, і користувачі
+> назавжди опинялись у різних бюджетах. Вставка `Member` падала сирим `IntegrityError`
+> на unique `telegram_id`. Рішення: домогосподарство створюється з явним первинним
+> ключем `SINGLETON_HOUSEHOLD_ID = 1` (PK уже унікальний — міграція не змінюється),
+> обидві вставки загорнуті в `async with session.begin_nested():` (SAVEPOINT), а на
+> `IntegrityError` робиться перевибір наявного рядка. Наступні задачі не повинні
+> розраховувати на автоінкрементні id домогосподарства.
 
 - [ ] **Step 1: Написати падаючий тест**
 
@@ -2440,14 +2453,31 @@ class FakeMessage:
         return self.edits[-1][0]
 
 
-class FakeCallback:
-    """Minimal stand-in for aiogram CallbackQuery."""
+class FakeCallback(CallbackQuery):
+    """Stand-in for aiogram CallbackQuery, built on the real model.
+
+    It must subclass the real ``CallbackQuery``: ``AccessMiddleware._deny``
+    branches on ``isinstance(event, CallbackQuery)`` to choose
+    ``show_alert=True``, and a duck-typed double would fail that check and
+    silently exercise the message branch instead — a green test proving
+    nothing. ``model_construct`` skips pydantic validation so a
+    ``FakeMessage`` can stand in for ``message``.
+    """
 
     def __init__(self, data: str = "", user_id: int = 111, first_name: str = "Сергій") -> None:
-        self.data = data
-        self.message = FakeMessage(user_id=user_id, first_name=first_name)
-        self.from_user = SimpleNamespace(id=user_id, first_name=first_name)
-        self.answers: list[tuple[str, bool]] = []
+        user = User(id=user_id, is_bot=False, first_name=first_name)
+        built = CallbackQuery.model_construct(
+            id="fake-callback-id",
+            from_user=user,
+            chat_instance="fake-chat-instance",
+            message=FakeMessage(user_id=user_id, first_name=first_name),
+            data=data,
+        )
+        self.__dict__.update(built.__dict__)
+        object.__setattr__(self, "__pydantic_fields_set__", built.__pydantic_fields_set__)
+        object.__setattr__(self, "__pydantic_extra__", built.__pydantic_extra__)
+        object.__setattr__(self, "__pydantic_private__", built.__pydantic_private__)
+        object.__setattr__(self, "answers", [])
 
     async def answer(self, text: str = "", show_alert: bool = False, **kwargs) -> None:
         self.answers.append((text, show_alert))
@@ -2513,7 +2543,8 @@ async def test_access_middleware_blocks_unknown_user_on_callback(session):
     callback = FakeCallback(user_id=999)
     await middleware(handler, callback, {"session": session})
 
-    assert callback.answers[-1][0] == DENIED_TEXT
+    # Assert show_alert too: a text-only check passes through either branch.
+    assert callback.answers[-1] == (DENIED_TEXT, True)
 
 
 async def test_db_session_middleware_commits_on_success(tmp_path):
@@ -3085,7 +3116,9 @@ async def enter_category_name(
         category = await add_category(session, member.household_id, message.text or "")
     except (DuplicateCategoryError, CategoryNameError) as error:
         # Stay in the same state so the user can retype without restarting.
-        await message.answer(f"⚠️ {error}", reply_markup=cancel_keyboard())
+        # DuplicateCategoryError's text embeds the existing category name —
+        # user-supplied, so it must be escaped like any other user text.
+        await message.answer(f"⚠️ {escape(str(error))}", reply_markup=cancel_keyboard())
         return
 
     await state.clear()
@@ -3365,7 +3398,9 @@ async def enter_amount(
     try:
         amount = parse_amount(message.text or "")
     except AmountError as error:
-        await message.answer(f"⚠️ {error}", reply_markup=cancel_keyboard())
+        # Error text is escaped like any other interpolation: the rule is absolute
+        # so a future message that echoes the user's input cannot leak markup.
+        await message.answer(f"⚠️ {escape(str(error))}", reply_markup=cancel_keyboard())
         return
 
     await state.update_data(amount=amount)
@@ -4006,7 +4041,7 @@ async def enter_custom_range(
     try:
         parse_custom_range(raw)
     except ValueError as error:
-        await message.answer(f"⚠️ {error}", reply_markup=cancel_keyboard())
+        await message.answer(f"⚠️ {escape(str(error))}", reply_markup=cancel_keyboard())
         return
 
     await state.update_data(period="custom", custom_range=raw)
