@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from budget_bot.amounts import AmountError, parse_amount
 from budget_bot.bot.callbacks import CategoryCb, EditFieldCb, ExpenseCb
 from budget_bot.bot.keyboards import cancel_keyboard, categories_keyboard, edit_fields_keyboard
+from budget_bot.bot.predicates import NOT_A_COMMAND
 from budget_bot.bot.texts import (
     CLEAR_DESCRIPTION_TOKEN,
     MAX_DESCRIPTION_LENGTH,
@@ -80,7 +81,7 @@ async def cb_pick_field(
     await callback.answer()
 
 
-@router.message(EditExpense.amount)
+@router.message(EditExpense.amount, NOT_A_COMMAND)
 async def enter_new_amount(
     message: Message, state: FSMContext, session: AsyncSession, member: Member
 ) -> None:
@@ -93,7 +94,7 @@ async def enter_new_amount(
     await _apply(message, state, session, member, amount=amount)
 
 
-@router.message(EditExpense.description)
+@router.message(EditExpense.description, NOT_A_COMMAND)
 async def enter_new_description(
     message: Message, state: FSMContext, session: AsyncSession, member: Member
 ) -> None:

@@ -8,10 +8,10 @@ from budget_bot.services.categories import list_categories
 from tests.conftest import FakeCallback, FakeMessage
 
 
-async def test_categories_command_lists_defaults(session, member, category):
+async def test_categories_command_lists_defaults(session, member, category, state):
     message = FakeMessage(text="/categories")
 
-    await cmd_categories(message, session=session, member=member)
+    await cmd_categories(message, session=session, member=member, state=state)
 
     text = message.last_reply
     assert "Їжа" in text and "Інше" in text

@@ -3,10 +3,10 @@ from budget_bot.bot.keyboards import BTN_ADD, main_menu
 from tests.conftest import FakeCallback, FakeMessage
 
 
-async def test_start_greets_by_display_name_and_lists_commands(member):
+async def test_start_greets_by_display_name_and_lists_commands(member, state):
     message = FakeMessage(text="/start")
 
-    await cmd_start(message, member=member)
+    await cmd_start(message, member=member, state=state)
 
     text, kwargs = message.replies[-1]
     assert "Сергій" in text
@@ -14,11 +14,11 @@ async def test_start_greets_by_display_name_and_lists_commands(member):
     assert kwargs["reply_markup"] is not None
 
 
-async def test_start_escapes_html_in_the_display_name(member):
+async def test_start_escapes_html_in_the_display_name(member, state):
     member.display_name = "<script>hack</script>"
     message = FakeMessage(text="/start")
 
-    await cmd_start(message, member=member)
+    await cmd_start(message, member=member, state=state)
 
     text = message.last_reply
     assert "&lt;script&gt;hack&lt;/script&gt;" in text

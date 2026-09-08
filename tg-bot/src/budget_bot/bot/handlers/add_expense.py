@@ -18,6 +18,7 @@ from budget_bot.bot.keyboards import (
     confirm_keyboard,
     description_keyboard,
 )
+from budget_bot.bot.predicates import NOT_A_COMMAND
 from budget_bot.bot.replies import edit_or_answer
 from budget_bot.bot.texts import MAX_DESCRIPTION_LENGTH
 from budget_bot.formatting import format_saved_expense
@@ -45,7 +46,7 @@ async def start_add(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.message(AddExpense.amount)
+@router.message(AddExpense.amount, NOT_A_COMMAND)
 async def enter_amount(
     message: Message, state: FSMContext, session: AsyncSession, member: Member
 ) -> None:
@@ -83,7 +84,7 @@ async def pick_category(
     await callback.answer()
 
 
-@router.message(AddExpense.description)
+@router.message(AddExpense.description, NOT_A_COMMAND)
 async def enter_description(message: Message, state: FSMContext) -> None:
     description = (message.text or "").strip()[:MAX_DESCRIPTION_LENGTH] or None
     await _ask_confirmation(message, state, description)

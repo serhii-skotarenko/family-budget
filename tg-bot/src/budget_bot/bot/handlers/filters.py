@@ -19,6 +19,7 @@ from budget_bot.bot.keyboards import (
     filter_members_keyboard,
     filter_periods_keyboard,
 )
+from budget_bot.bot.predicates import NOT_A_COMMAND
 from budget_bot.bot.texts import EMPTY_RESULT_TEXT
 from budget_bot.clock import utcnow
 from budget_bot.formatting import format_expense_list
@@ -68,7 +69,7 @@ async def choose_period(
     await callback.answer()
 
 
-@router.message(FilterFlow.custom_range)
+@router.message(FilterFlow.custom_range, NOT_A_COMMAND)
 async def enter_custom_range(
     message: Message, state: FSMContext, session: AsyncSession, member: Member
 ) -> None:

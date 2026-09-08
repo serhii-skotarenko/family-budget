@@ -2,6 +2,7 @@
 
 from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +20,13 @@ router = Router(name="expense_list")
 @router.message(Command("list"))
 @router.message(F.text == BTN_LIST)
 async def cmd_list(
-    message: Message, session: AsyncSession, member: Member, settings: Settings
+    message: Message,
+    session: AsyncSession,
+    member: Member,
+    settings: Settings,
+    state: FSMContext,
 ) -> None:
+    await state.clear()
     expenses = await list_expenses(
         session, member.household_id, ExpenseFilters(limit=settings.recent_expenses_limit)
     )

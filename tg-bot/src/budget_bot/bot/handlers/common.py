@@ -27,7 +27,8 @@ HELP_TEXT = (
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, member: Member) -> None:
+async def cmd_start(message: Message, member: Member, state: FSMContext) -> None:
+    await state.clear()
     await message.answer(
         f"👋 Привіт, {escape(member.display_name)}! Це бот сімейного бюджету.\n\n{HELP_TEXT}",
         reply_markup=main_menu(),
@@ -35,7 +36,8 @@ async def cmd_start(message: Message, member: Member) -> None:
 
 
 @router.message(Command("help"))
-async def cmd_help(message: Message) -> None:
+async def cmd_help(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await message.answer(HELP_TEXT, reply_markup=main_menu())
 
 

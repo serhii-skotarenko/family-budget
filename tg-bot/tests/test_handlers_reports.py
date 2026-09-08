@@ -17,10 +17,10 @@ async def make(session, household, member, category, amount):
     )
 
 
-async def test_report_command_offers_week_month_year():
+async def test_report_command_offers_week_month_year(state):
     message = FakeMessage(text="/report")
 
-    await cmd_report(message)
+    await cmd_report(message, state=state)
 
     labels = [b.text for row in message.replies[-1][1]["reply_markup"].inline_keyboard for b in row]
     assert any("тиждень" in label.lower() for label in labels)
