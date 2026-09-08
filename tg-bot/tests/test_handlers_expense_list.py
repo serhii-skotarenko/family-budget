@@ -20,23 +20,23 @@ async def make(session, household, member, category, amount, description=None):
     )
 
 
-async def test_empty_list_explains_how_to_start(session, member, category, settings):
+async def test_empty_list_explains_how_to_start(session, member, category, settings, state):
     message = FakeMessage(text="/list")
 
-    await cmd_list(message, session=session, member=member, settings=settings)
+    await cmd_list(message, session=session, member=member, settings=settings, state=state)
 
     assert "Витрат ще немає" in message.last_reply
     assert message.replies[-1][1].get("reply_markup") is None
 
 
 async def test_list_shows_records_newest_first_with_index_buttons(
-    session, household, member, category, settings
+    session, household, member, category, settings, state
 ):
     await make(session, household, member, category, 100)
     await make(session, household, member, category, 200, description="кава")
     message = FakeMessage(text="/list")
 
-    await cmd_list(message, session=session, member=member, settings=settings)
+    await cmd_list(message, session=session, member=member, settings=settings, state=state)
 
     text, kwargs = message.replies[-1]
     assert "<b>1.</b>" in text and "<b>2.</b>" in text
@@ -44,13 +44,15 @@ async def test_list_shows_records_newest_first_with_index_buttons(
     assert buttons == ["1", "2"]
 
 
-async def test_list_respects_the_configured_limit(session, household, member, category, settings):
+async def test_list_respects_the_configured_limit(
+    session, household, member, category, settings, state
+):
     for amount in range(1, 6):
         await make(session, household, member, category, amount)
     settings.recent_expenses_limit = 3
     message = FakeMessage(text="/list")
 
-    await cmd_list(message, session=session, member=member, settings=settings)
+    await cmd_list(message, session=session, member=member, settings=settings, state=state)
 
     assert "<b>3.</b>" in message.last_reply
     assert "<b>4.</b>" not in message.last_reply

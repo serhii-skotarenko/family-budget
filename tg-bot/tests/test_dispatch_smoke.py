@@ -14,15 +14,19 @@ from datetime import datetime
 import pytest_asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import SendMessage, TelegramMethod
 from aiogram.methods.base import TelegramType
 from aiogram.types import Chat, Message, Update, User
 
 from budget_bot.bot.handlers import build_router
+from budget_bot.bot.handlers.categories import AddCategory
 from budget_bot.bot.middlewares import AccessMiddleware, DbSessionMiddleware
 from budget_bot.db import create_engine, create_session_factory
 from budget_bot.models import Base
+from budget_bot.services.categories import list_categories
 
 ALLOWED_ID = 111
 FAKE_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
@@ -69,7 +73,7 @@ async def wired_dispatcher(tmp_path):
     dispatcher.include_router(build_router())
 
     try:
-        yield dispatcher, bot, session
+        yield dispatcher, bot, session, session_factory
     finally:
         await bot.session.close()
         await engine.dispose()
@@ -94,7 +98,7 @@ async def test_updates_are_routed_to_the_right_handler_through_the_real_stack(wi
     second build_router() call in a second test would raise. Both cases
     live in one test for that reason.
     """
-    dispatcher, bot, session = wired_dispatcher
+    dispatcher, bot, session, session_factory = wired_dispatcher
 
     # Case 1: a real command reaches its real handler through the real
     # router stack and middlewares (whitelist, DB session, FSM).
@@ -109,3 +113,38 @@ async def test_updates_are_routed_to_the_right_handler_through_the_real_stack(wi
     await dispatcher.feed_update(bot, _message_update("кава 100", update_id=2))
     texts = _sent_texts(session)
     assert "Не зрозумів" in texts[-1]
+
+    # Case 3: a slash command typed while an FSM dialog is waiting for text
+    # must run the command, not be swallowed as the dialog's input. Found in
+    # live testing: typing /report at the "name your category" prompt created
+    # a category literally named "/report". Router order decided the outcome —
+    # categories.router is included before reports.router, so its state
+    # handler claimed the update first.
+    state = FSMContext(
+        storage=dispatcher.fsm.storage,
+        key=StorageKey(bot_id=bot.id, chat_id=ALLOWED_ID, user_id=ALLOWED_ID),
+    )
+    await state.set_state(AddCategory.name)
+    await dispatcher.feed_update(bot, _message_update("/report", update_id=3))
+
+    texts = _sent_texts(session)
+    assert (
+        "Оберіть період звіту" in texts[-1]
+    ), f"/report was swallowed by the category dialog instead of running; got: {texts[-1]!r}"
+    async with session_factory() as check:
+        names = [c.name for c in await list_categories(check, 1)]
+    assert "/report" not in names, f"a junk category was created: {names}"
+
+    # ...and running a command must end the dialog it interrupted. Otherwise
+    # the state stays armed invisibly: the user sees the report prompt, thinks
+    # they left the category dialog, and their next ordinary word is silently
+    # stored as a category name.
+    assert (
+        await state.get_state() is None
+    ), f"dialog state survived the command: {await state.get_state()}"
+    await dispatcher.feed_update(bot, _message_update("Кава", update_id=4))
+    texts = _sent_texts(session)
+    assert "Не зрозумів" in texts[-1], f"plain text was still captured: {texts[-1]!r}"
+    async with session_factory() as check:
+        names = [c.name for c in await list_categories(check, 1)]
+    assert "Кава" not in names, f"plain text became a category: {names}"

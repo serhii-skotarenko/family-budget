@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.bot.callbacks import FlowCb
 from budget_bot.bot.keyboards import BTN_CATEGORIES, add_category_keyboard, cancel_keyboard
+from budget_bot.bot.predicates import NOT_A_COMMAND
 from budget_bot.models import Member
 from budget_bot.services.categories import (
     CategoryNameError,
@@ -28,7 +29,10 @@ class AddCategory(StatesGroup):
 
 @router.message(Command("categories"))
 @router.message(F.text == BTN_CATEGORIES)
-async def cmd_categories(message: Message, session: AsyncSession, member: Member) -> None:
+async def cmd_categories(
+    message: Message, session: AsyncSession, member: Member, state: FSMContext
+) -> None:
+    await state.clear()
     categories = await list_categories(session, member.household_id)
     lines = ["<b>🏷 Категорії</b>", ""]
     lines.extend(
@@ -44,7 +48,7 @@ async def cb_start_add_category(callback: CallbackQuery, state: FSMContext) -> N
     await callback.answer()
 
 
-@router.message(AddCategory.name)
+@router.message(AddCategory.name, NOT_A_COMMAND)
 async def enter_category_name(
     message: Message, state: FSMContext, session: AsyncSession, member: Member
 ) -> None:

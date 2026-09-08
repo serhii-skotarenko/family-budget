@@ -2,6 +2,7 @@
 
 from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +20,8 @@ router = Router(name="reports")
 
 @router.message(Command("report"))
 @router.message(F.text == BTN_REPORT)
-async def cmd_report(message: Message) -> None:
+async def cmd_report(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await message.answer("Оберіть період звіту:", reply_markup=report_periods_keyboard())
 
 
