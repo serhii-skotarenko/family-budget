@@ -127,6 +127,9 @@ Railway, один контейнер
 - **Ніколи не логуються:** значення токенів, суми, описи, назви категорій, імена та аргументи
   викликів (`search` містить довільний текст).
 - uvicorn: `log_config=None` (спільний `logging.basicConfig` застосунку), `access_log=False`.
+- SDK сам пише текст кожного `ToolError` у лог на рівні INFO (логер
+  `mcp.server.mcpserver.server`), а наші повідомлення містять назви категорій і учасників.
+  Тому рівень цього логера — WARNING: попередження й помилки SDK лишаються в лозі.
 
 ### Секрети
 
@@ -292,6 +295,7 @@ main():
     connector = build_connector(settings, ro_engine)   # None, якщо вимкнено
     mcp_task = create_task(serve_connector(connector)) # якщо увімкнено
     try:
+        await bot.set_my_commands(BOT_COMMANDS)
         await dispatcher.start_polling(bot)            # aiogram володіє SIGINT/SIGTERM
     finally:
         if connector:
@@ -303,9 +307,12 @@ main():
         await engine.dispose()
 ```
 
-- **Сигнали.** Підклас `uvicorn.Server` з no-op `capture_signals()`. Без нього uvicorn 0.53 через
-  `signal.signal` забирає SIGTERM у aiogram (той використовує `loop.add_signal_handler`), а після
-  своєї зупинки ще раз піднімає сигнал.
+- **Сигнали.** Підклас `uvicorn.Server` з no-op `capture_signals()`. uvicorn 0.53 на старті ставить
+  власні обробники через `signal.signal`, а на виході відновлює ті, що бачив на старті. Конектор
+  стартує раніше, ніж aiogram реєструє свої обробники (між ними мережевий `set_my_commands`), тож
+  після зупинки HTTP для SIGTERM лишається дія за замовчуванням, і повторний SIGTERM під час
+  прибирання вбиває процес. Прототип це підтвердив: код виходу −15, engines не закрито. З no-op
+  override єдиний власник сигналів — aiogram.
 - **Ізоляція збоїв.** `serve_connector` ловить `Exception` **і** `SystemExit`: uvicorn при
   зайнятому порті або збої lifespan викликає `sys.exit(1)`, а `SystemExit` з asyncio-задачі
   зупинив би весь цикл разом із ботом. Лог — ERROR `Claude connector stopped; the bot keeps
@@ -358,10 +365,10 @@ engine бота), очікувані значення порахувані вр�
    - виклик інструмента через HTTP пише в лог мітку токена; значення токена не з'являється в
      жодному записі логу.
 4. **Життєвий цикл:**
-   - subprocess-тест: замінник polling реєструє SIGTERM через `loop.add_signal_handler`, як
-     aiogram, поруч працює справжній uvicorn; після SIGTERM процес виходить з кодом 0, а лог
-     фіксує порядок polling → HTTP → engines;
-   - зайнятий порт: помилка в лозі, polling продовжує працювати;
+   - subprocess-тест зі справжнім aiogram `Dispatcher` (фейкова HTTP-сесія замість Telegram) і
+     справжнім uvicorn: після SIGTERM процес виходить з кодом 0, лог фіксує порядок polling →
+     HTTP → прибирання, а повторний SIGTERM під час прибирання процес не вбиває;
+   - зайнятий порт: `serve_connector` завершується без винятку, у лозі ERROR;
    - некоректний конфіг конектора: ERROR у лозі, бот стартує.
 5. **Регресія:** наявні тести зелені; тести `parse_custom_range` покривають перехід на
    `kyiv_day_range`.
@@ -417,8 +424,10 @@ engine бота), очікувані значення порахувані вр�
   - `ctx.request_context.request` дає доступ до HTTP-запиту;
   - `ToolError` — у `mcp.server.mcpserver.exceptions`;
   - автентифікація через `TokenVerifier` завжди додає `resource_metadata` до `401`.
-- **uvicorn 0.53:** `capture_signals()` ставить обробники через `signal.signal`; при збої
-  прив'язки порту чи lifespan — `sys.exit(STARTUP_FAILURE)`.
+- **uvicorn 0.53:** `capture_signals()` ставить обробники через `signal.signal` і на виході
+  відновлює збережені; при збої прив'язки порту чи lifespan — `sys.exit(STARTUP_FAILURE)`.
+  Прототипи 2026-09-15 зі справжнім aiogram: один SIGTERM зупиняє все чисто і без override, а
+  повторний SIGTERM під час прибирання без override вбиває процес, з override — ні.
 - **Railway:**
   [ліміти](https://docs.railway.com/networking/public-networking/specs-and-limits) — 15 хв на
   запит, поки йдуть дані; 5 хв без даних; 60 с простою HTTP/1.1; 32 KB заголовків.
