@@ -1,5 +1,6 @@
 """Outer middlewares: one DB session per update, whitelist enforcement."""
 
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -8,6 +9,8 @@ from aiogram.types import CallbackQuery, Message, TelegramObject
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from budget_bot.services.access import resolve_member
+
+logger = logging.getLogger(__name__)
 
 DENIED_TEXT = "⛔️ Доступ заборонено."
 GROUP_CHAT_TEXT = "⛔️ Бот працює лише в особистих чатах."
@@ -45,6 +48,11 @@ class AccessMiddleware(BaseMiddleware):
     a plain user check would still let them run e.g. /list there and dump
     the family's expense history into that chat, so non-private chats are
     rejected the same way an unknown user is.
+
+    Every rejection is logged, so an unknown account probing the bot is
+    visible in production logs. The record carries the Telegram user id, the
+    chat type and the event kind — never the person's name or message text,
+    which belong to someone who never agreed to be recorded.
     """
 
     def __init__(self, allowed_ids: frozenset[int], household_name: str) -> None:
@@ -59,10 +67,22 @@ class AccessMiddleware(BaseMiddleware):
     ) -> Any:
         user = getattr(event, "from_user", None)
         if user is None or user.id not in self.allowed_ids:
+            logger.warning(
+                "Access denied: Telegram user %s is not whitelisted (%s in a %s chat)",
+                user.id if user is not None else None,
+                type(event).__name__,
+                self._chat_type(event),
+            )
             await self._deny(event, DENIED_TEXT)
             return None
 
         if not self._is_private_chat(event):
+            logger.warning(
+                "Access denied: whitelisted user %s wrote from a %s chat (%s)",
+                user.id,
+                self._chat_type(event),
+                type(event).__name__,
+            )
             await self._deny(event, GROUP_CHAT_TEXT)
             return None
 
@@ -75,6 +95,15 @@ class AccessMiddleware(BaseMiddleware):
         return await handler(event, data)
 
     @staticmethod
+    def _chat_type(event: TelegramObject) -> str | None:
+        """The chat type Telegram reports for the event, or None without a chat."""
+        if isinstance(event, Message):
+            return event.chat.type
+        if isinstance(event, CallbackQuery) and event.message is not None:
+            return event.message.chat.type
+        return None
+
+    @staticmethod
     def _is_private_chat(event: TelegramObject) -> bool:
         """True when the event's chat is a private 1:1 chat with the bot.
 
@@ -82,11 +111,7 @@ class AccessMiddleware(BaseMiddleware):
         None or an InaccessibleMessage, both of which still expose ``.chat``.
         Anything we can't identify a chat for is treated as non-private.
         """
-        if isinstance(event, Message):
-            return event.chat.type == "private"
-        if isinstance(event, CallbackQuery) and event.message is not None:
-            return event.message.chat.type == "private"
-        return False
+        return AccessMiddleware._chat_type(event) == "private"
 
     @staticmethod
     async def _deny(event: TelegramObject, text: str) -> None:

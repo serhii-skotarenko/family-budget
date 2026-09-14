@@ -1,5 +1,7 @@
 import contextlib
+import logging
 
+import pytest
 from sqlalchemy import func, select
 
 from budget_bot.bot.middlewares import DENIED_TEXT, AccessMiddleware, DbSessionMiddleware
@@ -113,3 +115,72 @@ async def test_db_session_middleware_rolls_back_on_error(tmp_path):
     async with factory() as check:
         assert await check.scalar(select(func.count()).select_from(Household)) == 0
     await engine.dispose()
+
+
+MIDDLEWARE_LOGGER = "budget_bot.bot.middlewares"
+
+
+def _middleware_records(caplog):
+    return [record for record in caplog.records if record.name == MIDDLEWARE_LOGGER]
+
+
+@pytest.mark.parametrize(
+    "make_event",
+    [
+        lambda: FakeMessage(text="мій секретний пароль 12345", user_id=999, first_name="Stranger"),
+        lambda: FakeCallback(user_id=999, first_name="Stranger"),
+    ],
+    ids=["message", "callback"],
+)
+async def test_denied_stranger_is_logged_without_their_text_or_name(session, caplog, make_event):
+    # Breaks if: the denial goes unlogged (strangers invisible again), is logged
+    # below the production level, names the wrong user, or copies the
+    # stranger's message text or name into the logs.
+    caplog.set_level(logging.DEBUG, logger=MIDDLEWARE_LOGGER)
+    middleware = AccessMiddleware(frozenset({111}), "Сім'я")
+
+    async def handler(event, data):
+        raise AssertionError("handler must not be called")
+
+    await middleware(handler, make_event(), {"session": session})
+
+    records = _middleware_records(caplog)
+    assert len(records) == 1
+    assert records[0].levelno >= logging.INFO
+    text = records[0].getMessage()
+    assert "999" in text
+    assert "секретний пароль" not in text
+    assert "Stranger" not in text
+
+
+async def test_group_chat_denial_is_logged_with_member_and_chat_type(session, caplog):
+    # Breaks if: a group-chat rejection leaves no trace, or its record carries
+    # neither the member's id nor the chat type.
+    caplog.set_level(logging.DEBUG, logger=MIDDLEWARE_LOGGER)
+    middleware = AccessMiddleware(frozenset({111}), "Сім'я")
+
+    async def handler(event, data):
+        raise AssertionError("handler must not be called")
+
+    await middleware(handler, FakeMessage(text="/list", chat_type="group"), {"session": session})
+
+    records = _middleware_records(caplog)
+    assert len(records) == 1
+    assert records[0].levelno >= logging.INFO
+    text = records[0].getMessage()
+    assert "111" in text
+    assert "group" in text
+
+
+async def test_allowed_private_access_is_not_logged_as_a_denial(session, caplog):
+    # Breaks if: the denial log call escapes its guard and fires on every
+    # update, burying real denials under the family's normal traffic.
+    caplog.set_level(logging.DEBUG, logger=MIDDLEWARE_LOGGER)
+    middleware = AccessMiddleware(frozenset({111}), "Сім'я")
+
+    async def handler(event, data):
+        return "handled"
+
+    await middleware(handler, FakeMessage(text="/start"), {"session": session})
+
+    assert _middleware_records(caplog) == []
