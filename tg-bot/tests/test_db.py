@@ -42,6 +42,30 @@ async def test_readonly_engine_rejects_writes_but_sees_the_bots_commits(tmp_path
         await writer.dispose()
 
 
+async def test_readonly_engine_reads_one_snapshot_per_transaction(tmp_path):
+    path = tmp_path / "budget.sqlite3"
+    writer = create_engine(f"sqlite+aiosqlite:///{path}")
+    reader = create_readonly_engine(path)
+    try:
+        async with writer.begin() as connection:
+            await connection.execute(text("CREATE TABLE t (x INTEGER)"))
+            await connection.execute(text("INSERT INTO t VALUES (1)"))
+
+        async with reader.connect() as connection, connection.begin():
+            first = (await connection.execute(text("SELECT count(*) FROM t"))).scalar()
+
+            async with writer.begin() as writer_connection:
+                await writer_connection.execute(text("INSERT INTO t VALUES (2)"))
+
+            second = (await connection.execute(text("SELECT count(*) FROM t"))).scalar()
+
+        assert first == 1
+        assert second == 1
+    finally:
+        await reader.dispose()
+        await writer.dispose()
+
+
 async def test_readonly_engine_reads_while_the_bot_holds_no_connection(tmp_path):
     path = tmp_path / "budget.sqlite3"
     writer = create_engine(f"sqlite+aiosqlite:///{path}")

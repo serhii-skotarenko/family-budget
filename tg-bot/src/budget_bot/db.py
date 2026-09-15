@@ -46,10 +46,19 @@ def create_readonly_engine(database_path: Path) -> AsyncEngine:
 
     @event.listens_for(engine.sync_engine, "connect")
     def _set_pragmas(dbapi_connection, _connection_record) -> None:
+        # Let SQLAlchemy emit BEGIN itself (see _begin): the driver's own
+        # transaction handling never starts one before a SELECT, so each
+        # statement would otherwise read its own snapshot.
+        dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA query_only=ON")
         cursor.execute("PRAGMA busy_timeout=10000")
         cursor.close()
+
+    @event.listens_for(engine.sync_engine, "begin")
+    def _begin(connection) -> None:
+        # One snapshot per transaction, so one tool call's numbers agree.
+        connection.exec_driver_sql("BEGIN")
 
     return engine
 
