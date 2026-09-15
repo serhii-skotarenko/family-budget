@@ -1,4 +1,5 @@
 import logging
+import sqlite3
 
 import pytest
 from mcp import Client
@@ -103,6 +104,27 @@ async def test_unexpected_failure_hides_details_and_logs_the_traceback(tmp_path,
     )
     assert failure.exc_info is not None
     assert "MCP tool get_budget_overview by -: internal_error in" in caplog.text
+
+
+async def test_failure_tracebacks_do_not_log_sql_parameters(tmp_path, caplog):
+    # A real SQLite file with no tables: querying it fails with the bound
+    # parameters (dates, min_amount) in SQLAlchemy's error text.
+    path = tmp_path / "empty.sqlite3"
+    sqlite3.connect(path).close()
+    engine = create_readonly_engine(path)
+    try:
+        with caplog.at_level(logging.INFO):
+            result = await call(
+                create_session_factory(engine),
+                "list_expenses",
+                {"start_date": "2026-09-01", "end_date": "2026-09-30", "min_amount": 4242},
+            )
+    finally:
+        await engine.dispose()
+
+    assert result.is_error is True
+    assert any(r.getMessage() == "MCP tool list_expenses failed" for r in caplog.records)
+    assert "4242" not in caplog.text
 
 
 async def test_calls_are_logged_with_their_outcome_but_never_with_data(

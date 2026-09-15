@@ -41,7 +41,11 @@ def create_readonly_engine(database_path: Path) -> AsyncEngine:
     is a write; the bot's engine has already put the file into WAL mode.
     """
     engine = create_async_engine(
-        f"sqlite+aiosqlite:///file:{database_path}?mode=ro&uri=true", echo=False
+        f"sqlite+aiosqlite:///file:{database_path}?mode=ro&uri=true",
+        echo=False,
+        # A failure's error text includes bound parameters (dates, amounts,
+        # search text); never let that reach the logs.
+        hide_parameters=True,
     )
 
     @event.listens_for(engine.sync_engine, "connect")
