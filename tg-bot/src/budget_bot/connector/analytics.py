@@ -19,8 +19,11 @@ from budget_bot.connector.schemas import (
     BudgetOverview,
     CategoryInfo,
     CategorySpending,
+    ExpenseItem,
+    ExpensePage,
     Granularity,
     MemberSpending,
+    SortOrder,
     SpendingSummary,
     SpendingTrend,
     SplitBy,
@@ -261,3 +264,65 @@ def _bucket_count(date_range: DateRange, granularity: Granularity) -> int:
 def _breakdown(group: dict[str, list[int]]) -> list[BreakdownItem]:
     ordered = sorted(group.items(), key=lambda item: (-item[1][0], item[0]))
     return [BreakdownItem(name=name, amount=amount, count=n) for name, (amount, n) in ordered]
+
+
+_SORTS = {
+    "newest": (lambda row: (row.created_at, row.id), True),
+    "oldest": (lambda row: (row.created_at, row.id), False),
+    "largest": (lambda row: (row.amount, row.created_at, row.id), True),
+}
+
+
+async def list_expenses(
+    session: AsyncSession,
+    date_range: DateRange,
+    *,
+    category: Category | None,
+    member: Member | None,
+    search: str | None,
+    min_amount: int | None,
+    sort: SortOrder,
+    limit: int,
+    offset: int,
+) -> ExpensePage:
+    query = (
+        select(
+            Expense.id,
+            Expense.created_at,
+            Expense.amount,
+            Expense.description,
+            Category.name.label("category"),
+            Member.display_name.label("member"),
+        )
+        .join(Category, Category.id == Expense.category_id)
+        .join(Member, Member.id == Expense.member_id)
+        .where(*_conditions(date_range, category, member))
+    )
+    if min_amount is not None:
+        query = query.where(Expense.amount >= min_amount)
+    rows = list((await session.execute(query)).all())
+
+    needle = (search or "").strip().casefold()
+    if needle:
+        # In Python, not SQL: SQLite's LOWER() only folds ASCII letters.
+        rows = [row for row in rows if row.description and needle in row.description.casefold()]
+
+    key, reverse = _SORTS[sort]
+    rows.sort(key=key, reverse=reverse)
+    page = rows[offset : offset + limit]
+    return ExpensePage(
+        items=[
+            ExpenseItem(
+                id=row.id,
+                datetime=to_kyiv(row.created_at),
+                amount=row.amount,
+                category=row.category,
+                member=row.member,
+                description=row.description,
+            )
+            for row in page
+        ],
+        total_count=len(rows),
+        offset=offset,
+        next_offset=offset + limit if offset + limit < len(rows) else None,
+    )

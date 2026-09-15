@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 Granularity = Literal["week", "month"]
 SplitBy = Literal["none", "category", "member"]
+SortOrder = Literal["newest", "oldest", "largest"]
 
 
 class CategoryInfo(BaseModel):
@@ -76,3 +77,19 @@ class SpendingTrend(BaseModel):
     category: str | None
     member: str | None
     buckets: list[TrendBucket]
+
+
+class ExpenseItem(BaseModel):
+    id: int = Field(description="The number the bot shows as «Витрата #N»")
+    datetime: dt.datetime = Field(description="When the expense was recorded, Kyiv time")
+    amount: int
+    category: str
+    member: str = Field(description="Who recorded the expense")
+    description: str | None
+
+
+class ExpensePage(BaseModel):
+    items: list[ExpenseItem]
+    total_count: int
+    offset: int
+    next_offset: int | None = Field(description="Offset of the next page; null on the last page")
