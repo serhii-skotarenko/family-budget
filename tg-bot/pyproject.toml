@@ -13,6 +13,8 @@ dependencies = [
     "aiosqlite>=0.20",
     "alembic>=1.14",
     "pydantic-settings>=2.6",
+    # Exact pin: pydantic must satisfy both aiogram (<2.14) and mcp (>=2.12).
+    "mcp==2.2.0",
 ]
 
 [project.optional-dependencies]
