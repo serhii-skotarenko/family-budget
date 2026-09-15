@@ -41,3 +41,21 @@ def test_defaults():
     settings = make_settings()
     assert settings.household_name == "Сім'я"
     assert settings.recent_expenses_limit == 10
+
+
+def test_reads_connector_settings_from_their_env_names():
+    settings = make_settings(
+        MCP_ACCESS_TOKENS="serhii:abc", MCP_PUBLIC_HOST="budget.example", PORT="9000"
+    )
+    assert settings.mcp_access_tokens_raw == "serhii:abc"
+    assert settings.mcp_public_host == "budget.example"
+    assert settings.port == 9000
+
+
+def test_connector_settings_are_optional():
+    settings = make_settings()
+    assert (settings.mcp_access_tokens_raw, settings.mcp_public_host, settings.port) == (
+        None,
+        None,
+        8080,
+    )

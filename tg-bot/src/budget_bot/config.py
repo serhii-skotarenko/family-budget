@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     household_name: str = Field(default="Сім'я", alias="HOUSEHOLD_NAME")
     database_path: Path = Field(default=Path("data/budget.sqlite3"), alias="DATABASE_PATH")
     recent_expenses_limit: int = Field(default=10, alias="RECENT_EXPENSES_LIMIT")
+    # Claude connector. Kept raw and optional on purpose: a mistake here must
+    # only switch the connector off (see connector.server.connector_config),
+    # never stop the bot from starting.
+    mcp_access_tokens_raw: str | None = Field(default=None, alias="MCP_ACCESS_TOKENS")
+    mcp_public_host: str | None = Field(default=None, alias="MCP_PUBLIC_HOST")
+    port: int = Field(default=8080, alias="PORT")
 
     @property
     def allowed_telegram_ids(self) -> frozenset[int]:

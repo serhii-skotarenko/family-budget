@@ -15,6 +15,9 @@ dependencies = [
     "pydantic-settings>=2.6",
     # Exact pin: pydantic must satisfy both aiogram (<2.14) and mcp (>=2.12).
     "mcp==2.2.0",
+    # ConnectorServer overrides uvicorn's capture_signals(); upgrade only with
+    # tests/test_connector_lifecycle.py passing.
+    "uvicorn>=0.53,<0.54",
 ]
 
 [project.optional-dependencies]
