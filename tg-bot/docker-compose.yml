@@ -4,6 +4,8 @@ services:
     env_file: .env
     environment:
       DATABASE_PATH: /data/budget.sqlite3
+    ports:
+      - "8080:8080"  # Claude connector; unused unless MCP_ACCESS_TOKENS is set
     volumes:
       - budget-data:/data
     restart: unless-stopped

@@ -43,3 +43,8 @@ MVP бота реалізовано в `tg-bot/` (aiogram 3 + SQLAlchemy 2 async
 Railway. `.railway/railway.ts` описує бажаний стан (config-as-code Railway
 припинив підтримувати для нових сервісів). Сам образ лишається портативним.
 Покрокова інструкція — у `tg-bot/README.md`.
+
+Claude-конектор (MCP-сервер лише для читання) живе в `tg-bot/src/budget_bot/connector/`
+і працює в тому ж процесі, що й бот; вмикається змінною `MCP_ACCESS_TOKENS`.
+Дизайн — `docs/superpowers/specs/2026-09-15-claude-mcp-connector-design.md`,
+підключення й ротація токенів — розділ «Claude-конектор» у `tg-bot/README.md`.
