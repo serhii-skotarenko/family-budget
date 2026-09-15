@@ -5,18 +5,26 @@ returns a model from schemas.py. Anything grouped by Kyiv calendar day is
 grouped in Python: SQLite knows nothing about Europe/Kyiv or its DST switches.
 """
 
-from datetime import datetime
+from bisect import bisect_right
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from budget_bot.connector.inputs import DateRange, InvalidRequest
+from budget_bot.connector.inputs import MAX_TREND_BUCKETS, DateRange, InvalidRequest
 from budget_bot.connector.schemas import (
+    BreakdownItem,
     BudgetOverview,
     CategoryInfo,
     CategorySpending,
+    Granularity,
     MemberSpending,
     SpendingSummary,
+    SpendingTrend,
+    SplitBy,
+    TrendBucket,
 )
 from budget_bot.models import Category, Expense, Member
 from budget_bot.periods import kyiv_day_range, to_kyiv
@@ -141,3 +149,115 @@ def _conditions(
     if member is not None:
         conditions.append(Expense.member_id == member.id)
     return conditions
+
+
+@dataclass(frozen=True)
+class BucketSpan:
+    first: date
+    last: date
+    partial: bool
+
+
+def trend_buckets(date_range: DateRange, granularity: Granularity) -> list[BucketSpan]:
+    """Weeks (Monday–Sunday) or calendar months covering the range, clipped to it."""
+    count = _bucket_count(date_range, granularity)
+    if count > MAX_TREND_BUCKETS:
+        hint = (
+            'use granularity="month" or a shorter date range'
+            if granularity == "week"
+            else "use a shorter date range"
+        )
+        raise InvalidRequest(
+            f"{date_range.first.isoformat()}..{date_range.last.isoformat()} gives {count} "
+            f"{granularity} buckets (max {MAX_TREND_BUCKETS}); {hint}"
+        )
+
+    spans = []
+    start = _bucket_start(date_range.first, granularity)
+    while start <= date_range.last:
+        end = _bucket_end(start, granularity)
+        first = max(start, date_range.first)
+        last = min(end, date_range.last)
+        spans.append(BucketSpan(first=first, last=last, partial=(first, last) != (start, end)))
+        start = end + timedelta(days=1)
+    return spans
+
+
+async def spending_trend(
+    session: AsyncSession,
+    date_range: DateRange,
+    *,
+    granularity: Granularity,
+    split_by: SplitBy,
+    category: Category | None,
+    member: Member | None,
+) -> SpendingTrend:
+    spans = trend_buckets(date_range, granularity)
+    rows = (
+        await session.execute(
+            select(Expense.created_at, Expense.amount, Category.name, Member.display_name)
+            .join(Category, Category.id == Expense.category_id)
+            .join(Member, Member.id == Expense.member_id)
+            .where(*_conditions(date_range, category, member))
+        )
+    ).all()
+
+    starts = [span.first for span in spans]
+    totals = [0] * len(spans)
+    counts = [0] * len(spans)
+    groups: list[defaultdict[str, list[int]]] = [defaultdict(lambda: [0, 0]) for _ in spans]
+    for created_at, amount, category_name, member_name in rows:
+        index = bisect_right(starts, to_kyiv(created_at).date()) - 1
+        totals[index] += amount
+        counts[index] += 1
+        if split_by != "none":
+            entry = groups[index][category_name if split_by == "category" else member_name]
+            entry[0] += amount
+            entry[1] += 1
+
+    return SpendingTrend(
+        start_date=date_range.first,
+        end_date=date_range.last,
+        granularity=granularity,
+        split_by=split_by,
+        category=category.name if category is not None else None,
+        member=member.display_name if member is not None else None,
+        buckets=[
+            TrendBucket(
+                start_date=span.first,
+                end_date=span.last,
+                partial=span.partial,
+                total=totals[index],
+                count=counts[index],
+                breakdown=None if split_by == "none" else _breakdown(groups[index]),
+            )
+            for index, span in enumerate(spans)
+        ],
+    )
+
+
+def _bucket_start(day: date, granularity: Granularity) -> date:
+    if granularity == "week":
+        return day - timedelta(days=day.weekday())
+    return day.replace(day=1)
+
+
+def _bucket_end(start: date, granularity: Granularity) -> date:
+    if granularity == "week":
+        return start + timedelta(days=6)
+    next_month = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return next_month - timedelta(days=1)
+
+
+def _bucket_count(date_range: DateRange, granularity: Granularity) -> int:
+    if granularity == "week":
+        first_week = _bucket_start(date_range.first, "week")
+        last_week = _bucket_start(date_range.last, "week")
+        return (last_week - first_week).days // 7 + 1
+    first, last = date_range.first, date_range.last
+    return (last.year - first.year) * 12 + last.month - first.month + 1
+
+
+def _breakdown(group: dict[str, list[int]]) -> list[BreakdownItem]:
+    ordered = sorted(group.items(), key=lambda item: (-item[1][0], item[0]))
+    return [BreakdownItem(name=name, amount=amount, count=n) for name, (amount, n) in ordered]

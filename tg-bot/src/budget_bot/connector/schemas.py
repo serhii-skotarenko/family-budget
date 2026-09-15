@@ -5,8 +5,12 @@ structured content, so field names and meanings must stay stable.
 """
 
 import datetime as dt
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+Granularity = Literal["week", "month"]
+SplitBy = Literal["none", "category", "member"]
 
 
 class CategoryInfo(BaseModel):
@@ -47,3 +51,28 @@ class SpendingSummary(BaseModel):
     expense_count: int
     by_category: list[CategorySpending]
     by_member: list[MemberSpending]
+
+
+class BreakdownItem(BaseModel):
+    name: str
+    amount: int
+    count: int
+
+
+class TrendBucket(BaseModel):
+    start_date: dt.date
+    end_date: dt.date
+    partial: bool = Field(description="True when the date range cuts this week or month short")
+    total: int
+    count: int
+    breakdown: list[BreakdownItem] | None
+
+
+class SpendingTrend(BaseModel):
+    start_date: dt.date
+    end_date: dt.date
+    granularity: Granularity
+    split_by: SplitBy
+    category: str | None
+    member: str | None
+    buckets: list[TrendBucket]
