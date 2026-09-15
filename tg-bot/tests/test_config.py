@@ -49,13 +49,18 @@ def test_reads_connector_settings_from_their_env_names():
     )
     assert settings.mcp_access_tokens_raw == "serhii:abc"
     assert settings.mcp_public_host == "budget.example"
-    assert settings.port == 9000
+    assert settings.port_raw == "9000"
 
 
 def test_connector_settings_are_optional():
     settings = make_settings()
-    assert (settings.mcp_access_tokens_raw, settings.mcp_public_host, settings.port) == (
+    assert (settings.mcp_access_tokens_raw, settings.mcp_public_host, settings.port_raw) == (
         None,
         None,
-        8080,
+        None,
     )
+
+
+def test_a_non_numeric_port_does_not_stop_settings_from_loading():
+    settings = make_settings(PORT="abc")
+    assert settings.port_raw == "abc"

@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # never stop the bot from starting.
     mcp_access_tokens_raw: str | None = Field(default=None, alias="MCP_ACCESS_TOKENS")
     mcp_public_host: str | None = Field(default=None, alias="MCP_PUBLIC_HOST")
-    port: int = Field(default=8080, alias="PORT")
+    port_raw: str | None = Field(default=None, alias="PORT")
 
     @property
     def allowed_telegram_ids(self) -> frozenset[int]:

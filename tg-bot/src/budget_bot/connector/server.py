@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 MCP_PATH = "/mcp"
 CLAUDE_ORIGIN = "https://claude.ai"
 SHUTDOWN_GRACE_SECONDS = 5
+DEFAULT_PORT = 8080
 
 
 @dataclass(frozen=True)
@@ -49,12 +50,18 @@ def connector_config(settings: Settings) -> ConnectorConfig | None:
             "Claude connector disabled: MCP_PUBLIC_HOST must be set when MCP_ACCESS_TOKENS is"
         )
         return None
+    port_raw = (settings.port_raw or "").strip()
+    try:
+        port = DEFAULT_PORT if not port_raw else int(port_raw)
+        if not 1 <= port <= 65535:
+            raise ValueError
+    except ValueError:
+        logger.error("Claude connector disabled: PORT must be a number between 1 and 65535")
+        return None
     logger.info(
-        "Claude connector enabled on port %d for %s",
-        settings.port,
-        ", ".join(sorted(tokens.values())),
+        "Claude connector enabled on port %d for %s", port, ", ".join(sorted(tokens.values()))
     )
-    return ConnectorConfig(tokens=tokens, public_host=public_host, port=settings.port)
+    return ConnectorConfig(tokens=tokens, public_host=public_host, port=port)
 
 
 def build_connector_app(

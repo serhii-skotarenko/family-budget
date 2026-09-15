@@ -53,6 +53,26 @@ def test_valid_configuration_enables_the_connector():
     )
 
 
+def test_unset_port_defaults_to_8080():
+    settings = make_settings(MCP_ACCESS_TOKENS=f"serhii:{TOKEN}", MCP_PUBLIC_HOST="budget.test")
+    assert connector_config(settings) == ConnectorConfig(
+        tokens={TOKEN: "serhii"}, public_host="budget.test", port=8080
+    )
+
+
+def test_non_numeric_port_switches_the_connector_off_loudly(caplog):
+    settings = make_settings(
+        MCP_ACCESS_TOKENS=f"serhii:{TOKEN}", MCP_PUBLIC_HOST="budget.test", PORT="abc"
+    )
+    with caplog.at_level(logging.INFO):
+        assert connector_config(settings) is None
+    assert any(
+        r.levelno == logging.ERROR
+        and "Claude connector disabled: PORT must be a number between 1 and 65535" in r.getMessage()
+        for r in caplog.records
+    )
+
+
 def test_malformed_tokens_switch_the_connector_off_loudly(caplog):
     settings = make_settings(MCP_ACCESS_TOKENS="serhii:" + "q" * 10, MCP_PUBLIC_HOST="budget.test")
     with caplog.at_level(logging.INFO):
