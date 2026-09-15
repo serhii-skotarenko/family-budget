@@ -1,8 +1,9 @@
-"""Composition root: wires config, database, middlewares and handlers."""
+"""Composition root: wires config, database, middlewares, handlers and the Claude connector."""
 
 import asyncio
 import logging
 
+import uvicorn
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -12,7 +13,13 @@ from aiogram.types import BotCommand, ErrorEvent, Update
 from budget_bot.bot.handlers import build_router
 from budget_bot.bot.middlewares import AccessMiddleware, DbSessionMiddleware
 from budget_bot.config import Settings
-from budget_bot.db import create_engine, create_session_factory
+from budget_bot.connector.server import (
+    build_connector_app,
+    build_connector_server,
+    connector_config,
+    serve_connector,
+)
+from budget_bot.db import create_engine, create_readonly_engine, create_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +65,25 @@ async def handle_error(event: ErrorEvent, bot: Bot) -> None:
         logger.exception("Failed to notify chat %s about an error", chat_id)
 
 
+async def run_bot(dispatcher: Dispatcher, bot: Bot, connector: uvicorn.Server | None) -> None:
+    """Poll Telegram until SIGINT/SIGTERM, running the Claude connector alongside.
+
+    aiogram owns the signals. The connector starts first and is stopped only
+    after polling has ended; its own failure never ends polling (see
+    serve_connector).
+    """
+    connector_task = (
+        asyncio.create_task(serve_connector(connector)) if connector is not None else None
+    )
+    try:
+        await bot.set_my_commands(BOT_COMMANDS)
+        await dispatcher.start_polling(bot)
+    finally:
+        if connector is not None and connector_task is not None:
+            connector.should_exit = True
+            await connector_task
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings()
@@ -83,11 +109,22 @@ async def main() -> None:
 
     dispatcher.include_router(build_router())
 
-    await bot.set_my_commands(BOT_COMMANDS)
+    readonly_engine = None
+    connector = None
+    config = connector_config(settings)
+    if config is not None:
+        readonly_engine = create_readonly_engine(settings.database_path)
+        app = build_connector_app(
+            create_session_factory(readonly_engine), config.tokens, config.public_host
+        )
+        connector = build_connector_server(app, config.port)
+
     try:
-        await dispatcher.start_polling(bot)
+        await run_bot(dispatcher, bot, connector)
     finally:
         await bot.session.close()
+        if readonly_engine is not None:
+            await readonly_engine.dispose()
         await engine.dispose()
 
 
