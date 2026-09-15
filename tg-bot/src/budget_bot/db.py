@@ -1,5 +1,7 @@
 """Async engine and session factory."""
 
+from pathlib import Path
+
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -25,6 +27,27 @@ def create_engine(database_url: str) -> AsyncEngine:
         cursor.execute("PRAGMA journal_mode=WAL")
         # A concurrent writer no longer surfaces "database is locked"
         # immediately — it waits up to this long for the lock instead.
+        cursor.execute("PRAGMA busy_timeout=10000")
+        cursor.close()
+
+    return engine
+
+
+def create_readonly_engine(database_path: Path) -> AsyncEngine:
+    """Engine that can only read the bot's SQLite file (used by the Claude connector).
+
+    Two independent guards: SQLite opens the file with ``mode=ro``, and every
+    connection sets ``query_only``. No journal_mode pragma here — switching it
+    is a write; the bot's engine has already put the file into WAL mode.
+    """
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///file:{database_path}?mode=ro&uri=true", echo=False
+    )
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_pragmas(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA query_only=ON")
         cursor.execute("PRAGMA busy_timeout=10000")
         cursor.close()
 
