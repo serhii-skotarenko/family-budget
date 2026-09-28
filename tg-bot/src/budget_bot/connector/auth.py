@@ -112,9 +112,10 @@ def _bearer_token(scope: Scope) -> str | None:
 
 
 def _client_address(scope: Scope) -> str:
+    # The last hop is the one our edge proxy appended; earlier ones are client-supplied.
     forwarded = _header(scope, b"x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        return forwarded.split(",")[-1].strip()
     client = scope.get("client")
     return client[0] if client else "unknown"
 

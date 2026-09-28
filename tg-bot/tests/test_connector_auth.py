@@ -86,7 +86,8 @@ def test_denials_are_logged_with_reason_and_client_but_never_the_token(caplog):
             "/mcp",
             headers={
                 "Authorization": f"Bearer {'x' * 40}",
-                "X-Forwarded-For": "203.0.113.7, 10.0.0.1",
+                # The client wrote the first hop; the edge proxy appended the real one.
+                "X-Forwarded-For": "198.51.100.1, 203.0.113.7",
             },
         )
     assert [r.getMessage() for r in caplog.records if r.name == "budget_bot.connector.auth"] == [
