@@ -31,6 +31,11 @@ export default defineRailway(() => {
       TELEGRAM_BOT_TOKEN: preserve(),
       ALLOWED_TELEGRAM_IDS: preserve(),
       HOUSEHOLD_NAME: preserve(),
+      // Claude connector. Without MCP_ACCESS_TOKENS the connector stays off and
+      // the bot runs alone. The tokens are sealed in Railway; MCP_PUBLIC_HOST
+      // holds the reference ${{RAILWAY_PUBLIC_DOMAIN}}, not a literal domain.
+      MCP_ACCESS_TOKENS: preserve(),
+      MCP_PUBLIC_HOST: preserve(),
     },
   });
 
