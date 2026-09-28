@@ -61,6 +61,15 @@ def _kyiv_midnight_as_utc(day: date) -> datetime:
     return local.astimezone(UTC).replace(tzinfo=None)
 
 
+def kyiv_day_range(first: date, last: date, label: str = "") -> PeriodRange:
+    """UTC-naive half-open range covering Kyiv calendar days ``first``..``last``, inclusive."""
+    return PeriodRange(
+        start=_kyiv_midnight_as_utc(first),
+        end=_kyiv_midnight_as_utc(last + timedelta(days=1)),
+        label=label,
+    )
+
+
 def period_range(period: Period, now_utc: datetime) -> PeriodRange:
     today = to_kyiv(now_utc).date()
 
@@ -80,11 +89,7 @@ def period_range(period: Period, now_utc: datetime) -> PeriodRange:
         last = date(today.year, 12, 31)
         label = f"поточний рік ({first.year})"
 
-    return PeriodRange(
-        start=_kyiv_midnight_as_utc(first),
-        end=_kyiv_midnight_as_utc(last + timedelta(days=1)),
-        label=label,
-    )
+    return kyiv_day_range(first, last, label)
 
 
 def parse_custom_range(raw: str) -> PeriodRange:
@@ -99,11 +104,7 @@ def parse_custom_range(raw: str) -> PeriodRange:
         raise ValueError("Формат: ДД.ММ.РРРР-ДД.ММ.РРРР, наприклад 01.09.2026-15.09.2026") from exc
     if last < first:
         raise ValueError("Кінцева дата має бути не раніше за початкову.")
-    return PeriodRange(
-        start=_kyiv_midnight_as_utc(first),
-        end=_kyiv_midnight_as_utc(last + timedelta(days=1)),
-        label=f"{first:%d.%m.%Y}–{last:%d.%m.%Y}",
-    )
+    return kyiv_day_range(first, last, f"{first:%d.%m.%Y}–{last:%d.%m.%Y}")
 
 
 def format_date_short(dt_utc: datetime) -> str:

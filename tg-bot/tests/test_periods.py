@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -6,6 +6,7 @@ from budget_bot.periods import (
     Period,
     format_date_short,
     format_datetime,
+    kyiv_day_range,
     parse_custom_range,
     period_range,
     to_kyiv,
@@ -75,3 +76,10 @@ def test_parse_custom_range_rejects_bad_input(raw):
 def test_date_formatting_uses_kyiv_time():
     assert format_date_short(NOW) == "07.09"
     assert format_datetime(NOW) == "07.09.2026 12:00"
+
+
+def test_kyiv_day_range_covers_whole_kyiv_days_across_the_dst_switch():
+    # 25 October 2026 lasts 25 hours in Kyiv: summer time ends at 04:00.
+    result = kyiv_day_range(date(2026, 10, 25), date(2026, 10, 25))
+    assert result.start == datetime(2026, 10, 24, 21, 0)
+    assert result.end == datetime(2026, 10, 25, 22, 0)

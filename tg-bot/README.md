@@ -76,6 +76,7 @@ Railway зведене до `railway.json` і налаштувань серві�
    - `ALLOWED_TELEGRAM_IDS` — два Telegram ID через кому
    - `HOUSEHOLD_NAME` (опційно)
    - `RECENT_EXPENSES_LIMIT` (опційно)
+   - `MCP_ACCESS_TOKENS`, `MCP_PUBLIC_HOST` (опційно) — Claude-конектор, див. «Claude-конектор»
 5. **Deploy.** У логах має зʼявитись `Applying database migrations...`,
    далі `Run polling for bot @…`.
 
@@ -128,6 +129,84 @@ railway config apply     # застосовує
 sqlite3 /data/budget.sqlite3 ".backup '/data/backup.sqlite3'"
 ```
 
+## Claude-конектор
+
+Бот може віддавати витрати Claude на читання: у тому ж процесі працює MCP-сервер
+на `/mcp`. Claude (claude.ai, Desktop, мобільний застосунок, Claude Code) бачить
+чотири інструменти — огляд бюджету, підсумок за період, динаміку по тижнях чи
+місяцях і список записів. Змінювати дані конектор не може: база відкривається
+лише на читання.
+
+Без `MCP_ACCESS_TOKENS` конектор вимкнено, і бот працює як раніше. Помилка в
+змінних конектора лише вимикає його — у логах буде `Claude connector disabled: …`,
+а бот стартує все одно.
+
+### Увімкнути на Railway
+
+1. **Токени.** Окремий для кожної людини, згенеруйте локально:
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   Токен потрапляє лише у Railway і в налаштування конектора.
+2. **Variables:**
+   - `MCP_ACCESS_TOKENS` = `serhii:<токен>,yulia:<токен>` — у меню змінної
+     оберіть **Seal**, щоб значення більше не показувалось;
+   - `MCP_PUBLIC_HOST` = `${{RAILWAY_PUBLIC_DOMAIN}}`.
+
+   `PORT` Railway підставляє сам.
+3. **Settings → Networking → Generate Domain.** Railway визначить порт
+   автоматично; переконайтесь, що цільовий порт домену дорівнює `PORT`.
+4. **Перевірка після деплою.** У логах —
+   `Claude connector enabled on port … for serhii, yulia`. Далі:
+
+   ```bash
+   dig +short A <домен>                          # має бути IPv4: конектори Claude працюють лише через IPv4
+   curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<домен>/mcp   # 401
+   read -rs MCP_TOKEN                            # вставте токен; в історію shell він не потрапить
+   curl -s https://<домен>/mcp \
+     -H "Authorization: Bearer $MCP_TOKEN" \
+     -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+   ```
+
+   Остання команда має повернути JSON із `"result"`.
+
+### Підключити Claude
+
+- **claude.ai** (Desktop і мобільний застосунок підхоплять конектор з акаунта):
+  Settings → Connectors → Add custom connector. URL — `https://<домен>/mcp`,
+  саме `/mcp`, без слеша в кінці. Вхід — «No sign-in», Request header
+  `Authorization` зі значенням `Bearer <токен>`.
+- **Claude Code** — лише в user scope, щоб токен не потрапив у репозиторій:
+
+  ```bash
+  claude mcp add --transport http --scope user family-budget https://<домен>/mcp \
+    --header "Authorization: Bearer $MCP_TOKEN"
+  ```
+
+### Ротація токена
+
+1. Згенеруйте новий токен і замініть старий у `MCP_ACCESS_TOKENS` — Railway
+   перезапустить сервіс.
+2. Видаліть конектор у Claude і додайте знову з новим токеном: налаштування
+   авторизації в наявному конекторі не редагуються.
+
+### Локально
+
+У `.env` задайте `MCP_ACCESS_TOKENS=dev:<32+ символи>` і
+`MCP_PUBLIC_HOST=localhost:8080`; `docker compose up` прокидає порт 8080. Не
+запускайте локально бота з бойовим `TELEGRAM_BOT_TOKEN`, поки працює прод:
+Telegram віддає оновлення лише одному процесу.
+
+### Якщо Claude не підключається
+
+| Рядок у логах | Що це означає |
+|---|---|
+| `MCP access denied: missing bearer token` | заголовок не дійшов: перевірте назву `Authorization` і префікс `Bearer ` у значенні |
+| `MCP access denied: invalid bearer token` | токен не збігається з жодним у `MCP_ACCESS_TOKENS` |
+| `Invalid Host header: …` | `MCP_PUBLIC_HOST` не дорівнює домену з цього рядка |
+| `Invalid Origin header: …` | клієнт надсилає інший `Origin` — його треба додати в `allowed_origins` у `src/budget_bot/connector/server.py` |
+| `Claude connector disabled: …` | змінні конектора задано з помилкою; причина — в тому ж рядку |
+
 ## Конфіг
 
 | Змінна | Обовʼязкова | Значення за замовчуванням | Опис |
@@ -137,3 +216,6 @@ sqlite3 /data/budget.sqlite3 ".backup '/data/backup.sqlite3'"
 | `HOUSEHOLD_NAME` | ні | `Сім'я` | Назва домогосподарства |
 | `DATABASE_PATH` | ні | `data/budget.sqlite3` | Шлях до файлу SQLite. **У Docker/на PaaS не перевизначайте** — образ задає `/data/budget.sqlite3` (змонтований том); інше значення губить дані при редеплої |
 | `RECENT_EXPENSES_LIMIT` | ні | `10` | Скільки записів показує `/list` |
+| `MCP_ACCESS_TOKENS` | ні | — | Токени Claude-конектора: `мітка:токен` через кому, токен ≥ 32 символи. Не задано — конектор вимкнено |
+| `MCP_PUBLIC_HOST` | коли задано `MCP_ACCESS_TOKENS` | — | Домен, на який звертається Claude: `${{RAILWAY_PUBLIC_DOMAIN}}` на Railway, `localhost:8080` локально |
+| `PORT` | ні | `8080` | Порт конектора; Railway підставляє сам |
