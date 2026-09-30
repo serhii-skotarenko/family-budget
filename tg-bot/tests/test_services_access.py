@@ -17,7 +17,7 @@ async def test_creates_household_with_default_categories_on_first_call(session):
     count = await session.scalar(
         select(func.count()).select_from(Category).where(Category.household_id == household.id)
     )
-    assert count == 9
+    assert count == 10
 
 
 async def test_reuses_the_single_household(session):
