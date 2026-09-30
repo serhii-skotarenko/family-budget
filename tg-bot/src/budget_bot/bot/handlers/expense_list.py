@@ -1,4 +1,4 @@
-"""/list: recent expenses plus the per-record card."""
+"""/list: recent expenses plus the per-record card (with the one-time toggle)."""
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -8,11 +8,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.bot.callbacks import ExpenseCb
 from budget_bot.bot.keyboards import BTN_LIST, expense_card_keyboard, expense_index_keyboard
+from budget_bot.bot.replies import edit_or_answer
 from budget_bot.bot.texts import EMPTY_LIST_TEXT, MISSING_EXPENSE_TEXT
 from budget_bot.config import Settings
 from budget_bot.formatting import format_expense_card, format_expense_list
 from budget_bot.models import Member
-from budget_bot.services.expenses import ExpenseFilters, get_expense, list_expenses
+from budget_bot.services.expenses import (
+    ExpenseFilters,
+    get_expense,
+    list_expenses,
+    set_one_time,
+)
 
 router = Router(name="expense_list")
 
@@ -49,6 +55,30 @@ async def show_expense(
         return
 
     await callback.message.answer(
-        format_expense_card(expense), reply_markup=expense_card_keyboard(expense.id)
+        format_expense_card(expense),
+        reply_markup=expense_card_keyboard(expense.id, expense.is_one_time),
+    )
+    await callback.answer()
+
+
+@router.callback_query(ExpenseCb.filter(F.action == "toggle_one_time"))
+async def toggle_expense_one_time(
+    callback: CallbackQuery,
+    callback_data: ExpenseCb,
+    session: AsyncSession,
+    member: Member,
+) -> None:
+    expense = await get_expense(session, member.household_id, callback_data.expense_id)
+    if expense is None:
+        await callback.answer(MISSING_EXPENSE_TEXT, show_alert=True)
+        return
+
+    expense = await set_one_time(
+        session, expense, editor_id=member.id, value=not expense.is_one_time
+    )
+    await edit_or_answer(
+        callback,
+        format_expense_card(expense),
+        reply_markup=expense_card_keyboard(expense.id, expense.is_one_time),
     )
     await callback.answer()

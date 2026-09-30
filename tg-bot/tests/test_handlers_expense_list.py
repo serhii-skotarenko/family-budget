@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from budget_bot.bot.callbacks import ExpenseCb
-from budget_bot.bot.handlers.expense_list import cmd_list, show_expense
+from budget_bot.bot.handlers.expense_list import cmd_list, show_expense, toggle_expense_one_time
 from budget_bot.services.expenses import create_expense
 from tests.conftest import FakeCallback, FakeMessage
 
@@ -89,3 +89,53 @@ async def test_card_for_missing_expense_reports_alert(session, member, category)
 
     assert callback.answers[-1][1] is True
     assert callback.message.replies == []
+
+
+def card_buttons(kwargs) -> list[str]:
+    return [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
+
+
+async def test_card_offers_mark_as_one_time(session, household, member, category):
+    expense = await make(session, household, member, category, 100)
+    callback = FakeCallback()
+
+    await show_expense(
+        callback,
+        callback_data=ExpenseCb(action="view", expense_id=expense.id),
+        session=session,
+        member=member,
+    )
+
+    assert "🔁 Позначити як разову" in card_buttons(callback.message.replies[-1][1])
+
+
+async def test_toggle_marks_and_unmarks(session, household, member, partner, category):
+    expense = await make(session, household, member, category, 100)
+    callback = FakeCallback()
+    data = ExpenseCb(action="toggle_one_time", expense_id=expense.id)
+
+    await toggle_expense_one_time(callback, callback_data=data, session=session, member=partner)
+
+    text, kwargs = callback.message.edits[-1]
+    assert "🔁 Разова витрата" in text
+    assert "↩️ Зняти позначку разової" in card_buttons(kwargs)
+    assert expense.is_one_time is True and expense.updated_by_id == partner.id
+
+    await toggle_expense_one_time(callback, callback_data=data, session=session, member=member)
+
+    assert expense.is_one_time is False
+    assert "🔁 Разова витрата" not in callback.message.last_edit
+
+
+async def test_toggle_on_missing_expense(session, member, category):
+    callback = FakeCallback()
+
+    await toggle_expense_one_time(
+        callback,
+        callback_data=ExpenseCb(action="toggle_one_time", expense_id=9999),
+        session=session,
+        member=member,
+    )
+
+    assert callback.answers[-1][1] is True
+    assert callback.message.edits == []

@@ -92,7 +92,7 @@ def expense_index_keyboard(expenses: Sequence[Expense]) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def expense_card_keyboard(expense_id: int) -> InlineKeyboardMarkup:
+def expense_card_keyboard(expense_id: int, is_one_time: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text="✏️ Редагувати", callback_data=ExpenseCb(action="edit", expense_id=expense_id)
@@ -100,7 +100,11 @@ def expense_card_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     builder.button(
         text="🗑 Видалити", callback_data=ExpenseCb(action="delete", expense_id=expense_id)
     )
-    builder.adjust(2)
+    builder.button(
+        text="↩️ Зняти позначку разової" if is_one_time else "🔁 Позначити як разову",
+        callback_data=ExpenseCb(action="toggle_one_time", expense_id=expense_id),
+    )
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 

@@ -9,7 +9,7 @@ class CategoryCb(CallbackData, prefix="cat"):
 
 
 class ExpenseCb(CallbackData, prefix="exp"):
-    action: str  # "view" | "edit" | "delete" | "delete_yes" | "back"
+    action: str  # "view" | "edit" | "delete" | "delete_yes" | "back" | "toggle_one_time"
     expense_id: int
 
 

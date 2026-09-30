@@ -65,6 +65,8 @@ def format_expense_card(expense: Expense) -> str:
     ]
     if expense.description:
         lines.append(f"Опис: {escape(expense.description)}")
+    if expense.is_one_time:
+        lines.append("🔁 Разова витрата")
     if expense.updated_at is not None and expense.updated_by is not None:
         lines.append(
             "✏️ Змінив(ла): "
