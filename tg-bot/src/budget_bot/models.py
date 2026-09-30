@@ -73,6 +73,9 @@ class Expense(Base):
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))
     amount: Mapped[int]
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # One-time expenses count in reports but never in limit progress or the
+    # "typical amount" used for anomaly warnings.
+    is_one_time: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("members.id"), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -82,3 +85,28 @@ class Expense(Base):
     category: Mapped[Category] = relationship(lazy="selectin")
     author: Mapped[Member] = relationship(lazy="selectin", foreign_keys=[member_id])
     updated_by: Mapped[Member | None] = relationship(lazy="selectin", foreign_keys=[updated_by_id])
+
+
+class Limit(Base):
+    """A spending limit. Append-only: every change or removal inserts a new row.
+
+    The active limit for a (period_type, category_id) pair is its latest row
+    with ``effective_from <= now``; ``amount = NULL`` means the limit was
+    removed. ``category_id = NULL`` is the household-wide limit.
+    """
+
+    __tablename__ = "limits"
+    __table_args__ = (
+        Index("ix_limits_lookup", "household_id", "period_type", "category_id", "effective_from"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"))
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
+    period_type: Mapped[str] = mapped_column(String(10))  # a budget_bot.periods.Period value
+    amount: Mapped[int | None] = mapped_column(nullable=True)
+    effective_from: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    category: Mapped[Category | None] = relationship(lazy="selectin")
