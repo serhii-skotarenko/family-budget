@@ -26,8 +26,8 @@ class DateRange:
 
 
 def parse_date_range(start_date: str, end_date: str) -> DateRange:
-    first = _parse_day("start_date", start_date)
-    last = _parse_day("end_date", end_date)
+    first = parse_day("start_date", start_date)
+    last = parse_day("end_date", end_date)
     if last < first:
         raise InvalidRequest(
             f"end_date {last.isoformat()} is before start_date {first.isoformat()}"
@@ -45,7 +45,7 @@ def check_not_negative(name: str, value: int | None) -> None:
         raise InvalidRequest(f"{name} must be 0 or greater, got {value}")
 
 
-def _parse_day(name: str, raw: str) -> date:
+def parse_day(name: str, raw: str) -> date:
     try:
         day = datetime.strptime(raw, "%Y-%m-%d").date()
     except ValueError:

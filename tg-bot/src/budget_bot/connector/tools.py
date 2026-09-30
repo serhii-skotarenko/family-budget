@@ -18,17 +18,20 @@ from budget_bot.connector.inputs import (
     check_limit,
     check_not_negative,
     parse_date_range,
+    parse_day,
 )
 from budget_bot.connector.schemas import (
     BudgetOverview,
     ExpensePage,
     Granularity,
+    LimitProgressReport,
     OneTimeFilter,
     SortOrder,
     SpendingSummary,
     SpendingTrend,
     SplitBy,
 )
+from budget_bot.periods import to_kyiv
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +89,14 @@ LIST_DESCRIPTION = (
     "member, a case-insensitive text in the description, a minimum amount. Sorted newest "
     "first, oldest first or largest first. Each item says whether it is marked one-time in "
     "the bot."
+)
+
+LIMITS_DESCRIPTION = (
+    "Returns spending limits set in the bot with their progress, for the calendar month and "
+    "the Monday-to-Sunday week (Kyiv time) containing the given day, today by default: the "
+    "limit in whole UAH, spending so far without expenses marked one-time, percent used, "
+    "remaining, a linear forecast for the whole period and a status. A past period uses the "
+    "limits in force at its end. Category null means the household-wide limit."
 )
 
 
@@ -214,6 +225,26 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
             )
 
         return await _run("list_expenses", ctx, session_factory, work)
+
+    @server.tool(
+        name="get_limit_progress",
+        title="Прогрес лімітів",
+        description=LIMITS_DESCRIPTION,
+        annotations=READ_ONLY,
+    )
+    async def get_limit_progress(
+        ctx: Context,
+        date: Annotated[
+            str | None,
+            Field(description="A Kyiv calendar day, YYYY-MM-DD, not in the future; default today"),
+        ] = None,
+    ) -> LimitProgressReport:
+        async def work(session: AsyncSession) -> LimitProgressReport:
+            now = utcnow()
+            day = parse_day("date", date) if date is not None else to_kyiv(now).date()
+            return await analytics.limit_progress_report(session, day, now_utc=now)
+
+        return await _run("get_limit_progress", ctx, session_factory, work)
 
     return server
 

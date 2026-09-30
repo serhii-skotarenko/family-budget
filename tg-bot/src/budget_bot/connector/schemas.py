@@ -104,3 +104,37 @@ class ExpensePage(BaseModel):
     total_count: int
     offset: int
     next_offset: int | None = Field(description="Offset of the next page; null on the last page")
+
+
+LimitStatusName = Literal["ok", "warn", "over"]
+
+
+class LimitItem(BaseModel):
+    category: str | None = Field(description="Category name; null for the household-wide limit")
+    amount: int = Field(description="The limit, UAH")
+    spent: int = Field(description="Spending in the period without expenses marked one-time")
+    percent: int = Field(description="spent * 100 // amount")
+    remaining: int = Field(description="amount - spent; negative when over the limit")
+    forecast: int = Field(
+        description="spent / day_index * days_in_period, rounded; equals spent once complete"
+    )
+    status: LimitStatusName = Field(
+        description="over: percent >= 100; warn: percent >= 80 or forecast > amount; else ok"
+    )
+
+
+class LimitPeriodProgress(BaseModel):
+    period_type: Literal["month", "week"]
+    start_date: dt.date
+    end_date: dt.date
+    day_index: int = Field(description="Day of the period the figures are for, from 1")
+    days_in_period: int
+    complete: bool = Field(description="True when the period has already ended")
+    limits: list[LimitItem]
+
+
+class LimitProgressReport(BaseModel):
+    date: dt.date
+    periods: list[LimitPeriodProgress] = Field(
+        description="The calendar month and the Monday-to-Sunday week containing date, in Kyiv"
+    )

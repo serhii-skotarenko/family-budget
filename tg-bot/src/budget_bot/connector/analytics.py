@@ -22,6 +22,9 @@ from budget_bot.connector.schemas import (
     ExpenseItem,
     ExpensePage,
     Granularity,
+    LimitItem,
+    LimitPeriodProgress,
+    LimitProgressReport,
     MemberSpending,
     OneTimeFilter,
     SortOrder,
@@ -31,9 +34,10 @@ from budget_bot.connector.schemas import (
     TrendBucket,
 )
 from budget_bot.models import Category, Expense, Member
-from budget_bot.periods import kyiv_day_range, to_kyiv
+from budget_bot.periods import kyiv_day_range, period_range, to_kyiv
 from budget_bot.services.access import SINGLETON_HOUSEHOLD_ID, list_members
 from budget_bot.services.categories import list_categories, normalize_category_name
+from budget_bot.services.limits import LIMIT_PERIODS, limit_progress, period_days
 
 HOUSEHOLD_ID = SINGLETON_HOUSEHOLD_ID
 TIMEZONE = "Europe/Kyiv"
@@ -366,3 +370,50 @@ async def list_expenses(
         offset=offset,
         next_offset=offset + limit if offset + limit < len(rows) else None,
     )
+
+
+async def limit_progress_report(
+    session: AsyncSession, day: date, *, now_utc: datetime
+) -> LimitProgressReport:
+    """Limit progress for the month and the week containing ``day``.
+
+    Figures come from services.limits, as in the bot's /limits. A past period
+    is evaluated at its last moment, so it uses the limits in force at its end
+    and its forecast equals what was spent.
+    """
+    today = to_kyiv(now_utc).date()
+    if day > today:
+        raise InvalidRequest(
+            f"date {day.isoformat()} is in the future; today in Kyiv is {today.isoformat()}"
+        )
+
+    anchor = kyiv_day_range(day, day).start
+    periods = []
+    for period_type in LIMIT_PERIODS:
+        bounds = period_range(period_type, anchor)
+        as_of = min(now_utc, bounds.end - timedelta(microseconds=1))
+        day_index, days_in_period = period_days(bounds, as_of)
+        progress = await limit_progress(session, HOUSEHOLD_ID, period_type, as_of)
+        periods.append(
+            LimitPeriodProgress(
+                period_type=period_type.value,
+                start_date=to_kyiv(bounds.start).date(),
+                end_date=to_kyiv(bounds.end).date() - timedelta(days=1),
+                day_index=day_index,
+                days_in_period=days_in_period,
+                complete=now_utc >= bounds.end,
+                limits=[
+                    LimitItem(
+                        category=item.category_name,
+                        amount=item.amount,
+                        spent=item.spent,
+                        percent=item.percent,
+                        remaining=item.remaining,
+                        forecast=item.forecast,
+                        status=item.status.value,
+                    )
+                    for item in progress
+                ],
+            )
+        )
+    return LimitProgressReport(date=day, periods=periods)
