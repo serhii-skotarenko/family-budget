@@ -13,6 +13,7 @@ from budget_bot.clock import utcnow
 from budget_bot.formatting import format_report
 from budget_bot.models import Member
 from budget_bot.periods import Period, period_range
+from budget_bot.services.limits import LIMIT_PERIODS, limit_progress
 from budget_bot.services.reports import build_report
 
 router = Router(name="reports")
@@ -32,7 +33,13 @@ async def cb_report(
     session: AsyncSession,
     member: Member,
 ) -> None:
-    period = period_range(Period(callback_data.period), utcnow())
-    report = await build_report(session, member.household_id, period)
-    await edit_or_answer(callback, format_report(report))
+    now = utcnow()
+    report_period = Period(callback_data.period)
+    report = await build_report(session, member.household_id, period_range(report_period, now))
+    limits = (
+        await limit_progress(session, member.household_id, report_period, now)
+        if report_period in LIMIT_PERIODS
+        else []
+    )
+    await edit_or_answer(callback, format_report(report, limits))
     await callback.answer()

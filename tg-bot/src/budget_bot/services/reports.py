@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.models import Category, Expense, Member
@@ -14,6 +14,8 @@ class CategoryTotal:
     name: str
     amount: int
     share: float  # percent of the period total, one decimal
+    one_time: int = 0  # part of `amount` marked as one-time
+    category_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,7 @@ class Report:
     total: int
     by_category: list[CategoryTotal]
     by_member: list[MemberTotal]
+    one_time_total: int = 0
 
 
 async def build_report(session: AsyncSession, household_id: int, period: PeriodRange) -> Report:
@@ -41,8 +44,18 @@ async def build_report(session: AsyncSession, household_id: int, period: PeriodR
     if not total:
         return Report(period_label=period.label, total=0, by_category=[], by_member=[])
 
+    one_time_total = await session.scalar(
+        select(func.coalesce(func.sum(Expense.amount), 0)).where(
+            *scope, Expense.is_one_time.is_(True)
+        )
+    )
     category_rows = await session.execute(
-        select(Category.name, func.sum(Expense.amount))
+        select(
+            Category.id,
+            Category.name,
+            func.sum(Expense.amount),
+            func.sum(case((Expense.is_one_time, Expense.amount), else_=0)),
+        )
         .join(Category, Category.id == Expense.category_id)
         .where(*scope)
         .group_by(Category.id, Category.name)
@@ -60,10 +73,17 @@ async def build_report(session: AsyncSession, household_id: int, period: PeriodR
         period_label=period.label,
         total=int(total),
         by_category=[
-            CategoryTotal(name=name, amount=int(amount), share=round(amount * 100 / total, 1))
-            for name, amount in category_rows.all()
+            CategoryTotal(
+                name=name,
+                amount=int(amount),
+                share=round(amount * 100 / total, 1),
+                one_time=int(one_time),
+                category_id=category_id,
+            )
+            for category_id, name, amount, one_time in category_rows.all()
         ],
         by_member=[
             MemberTotal(display_name=name, amount=int(amount)) for name, amount in member_rows.all()
         ],
+        one_time_total=int(one_time_total),
     )

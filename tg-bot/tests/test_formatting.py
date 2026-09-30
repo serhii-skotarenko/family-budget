@@ -7,8 +7,11 @@ from budget_bot.formatting import (
     format_report,
     format_saved_expense,
 )
+from budget_bot.periods import Period, period_range
 from budget_bot.services.expenses import create_expense, update_expense
+from budget_bot.services.limits import LimitProgress
 from budget_bot.services.reports import CategoryTotal, MemberTotal, Report
+from tests.conftest import kyiv
 
 NOW = datetime(2026, 9, 7, 9, 0)  # 12:00 Kyiv
 
@@ -135,3 +138,44 @@ def test_empty_report_says_so_without_error():
 
     assert "Витрат за цей період не знайдено" in text
     assert "%" not in text
+
+
+def _progress(category_id, name, amount, spent, period=Period.MONTH):
+    now = kyiv(2026, 10, 15)
+    return LimitProgress(
+        limit_id=1,
+        period_type=period,
+        category_id=category_id,
+        category_name=name,
+        amount=amount,
+        spent=spent,
+        period=period_range(period, now),
+        day_index=15,
+        days_in_period=31,
+    )
+
+
+def test_report_shows_one_time_and_limit_lines():
+    report = Report(
+        period_label="поточний місяць (жовтень 2026)",
+        total=58400,
+        by_category=[
+            CategoryTotal("<b>Діти</b>", 19921, 34.1, one_time=16962, category_id=7),
+            CategoryTotal("Їжа", 38479, 65.9, category_id=1),
+        ],
+        by_member=[MemberTotal("Сергій", 58400)],
+        one_time_total=16962,
+    )
+    limits = [
+        _progress(None, None, 50000, 41438),
+        _progress(7, "<b>Діти</b>", 4000, 2959),
+    ]
+
+    text = format_report(report, limits)
+
+    assert "Разом: <b>58 400 ₴</b> (з них разових 16 962 ₴)" in text
+    assert "  ліміт 50 000 ₴ — використано 82% ⚠️" in text
+    assert "• &lt;b&gt;Діти&lt;/b&gt; — 19 921 ₴ (34.1%)" in text
+    assert "  з них разових: 16 962 ₴" in text
+    assert "  ліміт 4 000 ₴ — використано 73%" in text  # 2959*100//4000 = 73
+    assert text.count("ліміт") == 2  # Їжа has no limit

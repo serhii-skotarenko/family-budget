@@ -6,7 +6,17 @@ from html import escape
 from budget_bot.amounts import format_amount
 from budget_bot.models import Expense
 from budget_bot.periods import format_date_short, format_datetime
+from budget_bot.services.limits import LimitProgress, LimitStatus
 from budget_bot.services.reports import Report
+
+STATUS_ICONS = {LimitStatus.OK: "", LimitStatus.WARN: " ⚠️", LimitStatus.OVER: " 🔴"}
+
+
+def _limit_usage_line(progress: LimitProgress) -> str:
+    return (
+        f"  ліміт {format_amount(progress.amount)} — використано {progress.percent}%"
+        f"{STATUS_ICONS[progress.status]}"
+    )
 
 
 def format_expense_line(expense: Expense, index: int | None = None) -> str:
@@ -57,16 +67,27 @@ def format_saved_expense(expense: Expense) -> str:
     return f"✅ Записано: {format_expense_line(expense)}"
 
 
-def format_report(report: Report) -> str:
+def format_report(report: Report, limits: Sequence[LimitProgress] = ()) -> str:
     header = f"📊 <b>Звіт — {escape(report.period_label)}</b>"
     if report.total == 0:
         return f"{header}\n\nВитрат за цей період не знайдено."
 
-    lines = [header, f"Разом: <b>{format_amount(report.total)}</b>", "", "<b>За категоріями:</b>"]
-    lines.extend(
-        f"• {escape(item.name)} — {format_amount(item.amount)} ({item.share:.1f}%)"
-        for item in report.by_category
-    )
+    limit_by_category = {progress.category_id: progress for progress in limits}
+    total_line = f"Разом: <b>{format_amount(report.total)}</b>"
+    if report.one_time_total:
+        total_line += f" (з них разових {format_amount(report.one_time_total)})"
+    lines = [header, total_line]
+    if None in limit_by_category:
+        lines.append(_limit_usage_line(limit_by_category[None]))
+
+    lines.extend(["", "<b>За категоріями:</b>"])
+    for item in report.by_category:
+        lines.append(f"• {escape(item.name)} — {format_amount(item.amount)} ({item.share:.1f}%)")
+        if item.one_time:
+            lines.append(f"  з них разових: {format_amount(item.one_time)}")
+        if item.category_id is not None and item.category_id in limit_by_category:
+            lines.append(_limit_usage_line(limit_by_category[item.category_id]))
+
     lines.extend(["", "<b>За учасниками:</b>"])
     lines.extend(
         f"• {escape(item.display_name)} — {format_amount(item.amount)}" for item in report.by_member

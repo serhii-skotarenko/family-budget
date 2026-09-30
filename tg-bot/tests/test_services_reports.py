@@ -66,3 +66,31 @@ async def test_categories_are_sorted_by_amount_desc(session, household, member, 
     report = await build_report(session, household.id, WEEK)
 
     assert [c.name for c in report.by_category] == ["Велике", "Мале"]
+
+
+async def test_one_time_amounts_are_split_out(session, household, member, category):
+    coffee = await add_category(session, household.id, "Кава")
+    await add(session, household, member, category, 600)
+    await create_expense(
+        session,
+        household_id=household.id,
+        member_id=member.id,
+        category_id=category.id,
+        amount=400,
+        is_one_time=True,
+        created_at=NOW,
+    )
+    await add(session, household, member, coffee, 100)
+
+    report = await build_report(session, household.id, WEEK)
+
+    assert report.total == 1100
+    assert report.one_time_total == 400
+    food, drinks = report.by_category
+    assert (food.name, food.amount, food.one_time, food.category_id) == (
+        "Їжа",
+        1000,
+        400,
+        category.id,
+    )
+    assert (drinks.name, drinks.one_time) == ("Кава", 0)

@@ -1,8 +1,10 @@
 from budget_bot.bot.callbacks import ReportCb
 from budget_bot.bot.handlers.reports import cb_report, cmd_report
 from budget_bot.clock import utcnow
+from budget_bot.periods import Period
 from budget_bot.services.categories import add_category
 from budget_bot.services.expenses import create_expense
+from budget_bot.services.limits import set_limit
 from tests.conftest import FakeCallback, FakeMessage
 
 
@@ -54,3 +56,39 @@ async def test_empty_report_says_so_without_error(session, member, category):
     await cb_report(callback, callback_data=ReportCb(period="year"), session=session, member=member)
 
     assert "Витрат за цей період не знайдено" in callback.message.last_edit
+
+
+async def _limit(session, household, member, period, category, amount):
+    await set_limit(
+        session,
+        household_id=household.id,
+        member_id=member.id,
+        period_type=period,
+        category_id=category.id,
+        amount=amount,
+    )
+
+
+async def test_month_report_shows_the_month_limit_only(session, household, member, category):
+    await make(session, household, member, category, 600)
+    await _limit(session, household, member, Period.MONTH, category, 1000)
+    await _limit(session, household, member, Period.WEEK, category, 5000)
+    callback = FakeCallback()
+
+    await cb_report(
+        callback, callback_data=ReportCb(period="month"), session=session, member=member
+    )
+
+    text = callback.message.last_edit
+    assert "ліміт 1 000 ₴ — використано 60%" in text
+    assert "5 000" not in text
+
+
+async def test_year_report_has_no_limit_lines(session, household, member, category):
+    await make(session, household, member, category, 600)
+    await _limit(session, household, member, Period.MONTH, category, 1000)
+    callback = FakeCallback()
+
+    await cb_report(callback, callback_data=ReportCb(period="year"), session=session, member=member)
+
+    assert "ліміт" not in callback.message.last_edit
