@@ -5,9 +5,18 @@ from collections.abc import Sequence
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
-from budget_bot.bot.callbacks import CategoryCb, EditFieldCb, ExpenseCb, FilterCb, FlowCb, ReportCb
+from budget_bot.bot.callbacks import (
+    CategoryCb,
+    EditFieldCb,
+    ExpenseCb,
+    FilterCb,
+    FlowCb,
+    LimitCb,
+    ReportCb,
+)
 from budget_bot.models import Category, Expense, Member
-from budget_bot.periods import PERIOD_TITLES, Period
+from budget_bot.periods import LIMIT_PERIOD_TITLES, PERIOD_TITLES, Period
+from budget_bot.services.limits import GENERAL_LIMIT_NAME
 
 BTN_ADD = "➕ Витрата"
 BTN_LIST = "📋 Список"
@@ -156,4 +165,36 @@ def report_periods_keyboard() -> InlineKeyboardMarkup:
     for period in REPORT_PERIODS:
         builder.button(text=PERIOD_TITLES[period], callback_data=ReportCb(period=period.value))
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def limit_periods_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for period in (Period.WEEK, Period.MONTH):
+        builder.button(
+            text=LIMIT_PERIOD_TITLES[period].capitalize(),
+            callback_data=LimitCb(action="period", period_type=period.value),
+        )
+    builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def limit_categories_keyboard(
+    period_type: Period, categories: Sequence[Category]
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=f"🌐 {GENERAL_LIMIT_NAME}",
+        callback_data=LimitCb(action="category", period_type=period_type.value, category_id=0),
+    )
+    for item in categories:
+        builder.button(
+            text=item.name,
+            callback_data=LimitCb(
+                action="category", period_type=period_type.value, category_id=item.id
+            ),
+        )
+    builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
+    builder.adjust(1, 2)
     return builder.as_markup()

@@ -29,3 +29,9 @@ class FilterCb(CallbackData, prefix="flt"):
 
 class FlowCb(CallbackData, prefix="flow"):
     action: str  # "cancel" | "skip" | "save" | "add_category"
+
+
+class LimitCb(CallbackData, prefix="lim"):
+    action: str  # "period" | "category" | "add" | "edit" | "delete" | "delete_yes"
+    period_type: str = ""  # a budget_bot.periods.Period value (week | month)
+    category_id: int = 0  # 0 = the household-wide limit

@@ -5,7 +5,7 @@ from html import escape
 
 from budget_bot.amounts import format_amount
 from budget_bot.models import Expense
-from budget_bot.periods import format_date_short, format_datetime
+from budget_bot.periods import LIMIT_PERIOD_TITLES, Period, format_date_short, format_datetime
 from budget_bot.services.limits import LimitProgress, LimitStatus
 from budget_bot.services.reports import Report
 
@@ -93,3 +93,13 @@ def format_report(report: Report, limits: Sequence[LimitProgress] = ()) -> str:
         f"• {escape(item.display_name)} — {format_amount(item.amount)}" for item in report.by_member
     )
     return "\n".join(lines)
+
+
+def format_limit_saved(period_type: Period, name: str, amount: int, previous: int | None) -> str:
+    text = (
+        f"✅ Ліміт на {LIMIT_PERIOD_TITLES[period_type]} · {escape(name)}: "
+        f"<b>{format_amount(amount)}</b>"
+    )
+    if previous is not None:
+        text += f" (було {format_amount(previous)})"
+    return text
