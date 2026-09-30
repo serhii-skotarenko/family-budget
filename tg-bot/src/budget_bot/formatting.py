@@ -1,12 +1,20 @@
 """Rendering of user-facing messages. Output is Telegram HTML."""
 
 from collections.abc import Sequence
+from datetime import timedelta
 from html import escape
 
 from budget_bot.amounts import format_amount
 from budget_bot.models import Expense
-from budget_bot.periods import LIMIT_PERIOD_TITLES, Period, format_date_short, format_datetime
-from budget_bot.services.limits import LimitProgress, LimitStatus
+from budget_bot.periods import (
+    LIMIT_PERIOD_TITLES,
+    MONTHS_UK,
+    Period,
+    format_date_short,
+    format_datetime,
+    to_kyiv,
+)
+from budget_bot.services.limits import LIMIT_PERIODS, WARN_PERCENT, LimitProgress, LimitStatus
 from budget_bot.services.reports import Report
 
 STATUS_ICONS = {LimitStatus.OK: "", LimitStatus.WARN: " ⚠️", LimitStatus.OVER: " 🔴"}
@@ -103,3 +111,44 @@ def format_limit_saved(period_type: Period, name: str, amount: int, previous: in
     if previous is not None:
         text += f" (було {format_amount(previous)})"
     return text
+
+
+EMPTY_LIMITS_TEXT = "Лімітів ще немає. Додати — /setlimit"
+
+
+def _limits_section_title(progress: LimitProgress) -> str:
+    first = to_kyiv(progress.period.start).date()
+    day = f"день {progress.day_index} з {progress.days_in_period}"
+    if progress.period_type is Period.MONTH:
+        return f"<b>Місяць ({MONTHS_UK[first.month - 1]}, {day}):</b>"
+    last = to_kyiv(progress.period.end).date() - timedelta(days=1)
+    return f"<b>Тиждень ({first:%d.%m}–{last:%d.%m}, {day}):</b>"
+
+
+def _limit_line(progress: LimitProgress) -> str:
+    line = (
+        f"• {escape(progress.name)}: {format_amount(progress.spent)} / "
+        f"{format_amount(progress.amount)} — {progress.percent}%"
+    )
+    if progress.status is LimitStatus.OVER:
+        over = progress.spent - progress.amount
+        line += f" 🔴 перевищено на {format_amount(over)}" if over else " 🔴 ліміт вичерпано"
+        return line
+    if progress.percent >= WARN_PERCENT:
+        line += " ⚠️"
+    line += f", лишилось {format_amount(progress.remaining)}"
+    forecast_icon = " ⚠️" if progress.forecast > progress.amount else ""
+    return f"{line}\n  прогноз: {format_amount(progress.forecast)}{forecast_icon}"
+
+
+def format_limits(progress: Sequence[LimitProgress]) -> str:
+    if not progress:
+        return EMPTY_LIMITS_TEXT
+    lines = ["📊 <b>Ліміти</b>"]
+    for period_type in LIMIT_PERIODS:
+        items = [item for item in progress if item.period_type is period_type]
+        if not items:
+            continue
+        lines.extend(["", _limits_section_title(items[0])])
+        lines.extend(_limit_line(item) for item in items)
+    return "\n".join(lines)

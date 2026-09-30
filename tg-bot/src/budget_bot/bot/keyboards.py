@@ -15,8 +15,8 @@ from budget_bot.bot.callbacks import (
     ReportCb,
 )
 from budget_bot.models import Category, Expense, Member
-from budget_bot.periods import LIMIT_PERIOD_TITLES, PERIOD_TITLES, Period
-from budget_bot.services.limits import GENERAL_LIMIT_NAME
+from budget_bot.periods import LIMIT_PERIOD_SHORT, LIMIT_PERIOD_TITLES, PERIOD_TITLES, Period
+from budget_bot.services.limits import GENERAL_LIMIT_NAME, LimitProgress
 
 BTN_ADD = "➕ Витрата"
 BTN_LIST = "📋 Список"
@@ -197,4 +197,31 @@ def limit_categories_keyboard(
         )
     builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
     builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def limits_keyboard(progress: Sequence[LimitProgress]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for item in progress:
+        target = {"period_type": item.period_type.value, "category_id": item.category_id or 0}
+        builder.button(
+            text=f"✏️ {item.name} · {LIMIT_PERIOD_SHORT[item.period_type]}",
+            callback_data=LimitCb(action="edit", **target),
+        )
+        builder.button(text="🗑", callback_data=LimitCb(action="delete", **target))
+    builder.button(text="➕ Додати ліміт", callback_data=LimitCb(action="add"))
+    builder.adjust(*([2] * len(progress)), 1)
+    return builder.as_markup()
+
+
+def limit_delete_confirm_keyboard(period_type: Period, category_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🗑 Так, зняти",
+        callback_data=LimitCb(
+            action="delete_yes", period_type=period_type.value, category_id=category_id
+        ),
+    )
+    builder.button(text="↩️ Ні", callback_data=FlowCb(action="cancel"))
+    builder.adjust(2)
     return builder.as_markup()

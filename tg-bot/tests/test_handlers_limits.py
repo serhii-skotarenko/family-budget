@@ -1,6 +1,10 @@
 from budget_bot.bot.callbacks import LimitCb
 from budget_bot.bot.handlers.limits import (
     SetLimit,
+    cb_ask_delete_limit,
+    cb_delete_limit,
+    cb_edit_limit,
+    cmd_limits,
     cmd_setlimit,
     enter_limit_amount,
     pick_limit_category,
@@ -8,6 +12,7 @@ from budget_bot.bot.handlers.limits import (
 )
 from budget_bot.clock import utcnow
 from budget_bot.periods import Period
+from budget_bot.services.expenses import create_expense
 from budget_bot.services.limits import active_limits, get_active_limit, set_limit
 from tests.conftest import FakeCallback, FakeMessage
 
@@ -142,3 +147,122 @@ async def test_unknown_category_is_reported(session, member, category, state):
 
     assert await state.get_state() == SetLimit.category
     assert callback.answers[-1][1] is True
+
+
+async def _set(session, member, period, category_id, amount):
+    await set_limit(
+        session,
+        household_id=member.household_id,
+        member_id=member.id,
+        period_type=period,
+        category_id=category_id,
+        amount=amount,
+    )
+
+
+async def test_limits_empty(session, member, state):
+    message = FakeMessage(text="/limits")
+
+    await cmd_limits(message, state=state, session=session, member=member)
+
+    assert "Лімітів ще немає" in message.last_reply
+    assert buttons(message.replies[-1][1]) == ["➕ Додати ліміт"]
+
+
+async def test_limits_shows_progress_and_buttons(session, household, member, category, state):
+    await create_expense(
+        session,
+        household_id=household.id,
+        member_id=member.id,
+        category_id=category.id,
+        amount=9800,
+    )
+    await _set(session, member, Period.MONTH, category.id, 12000)
+    await _set(session, member, Period.WEEK, None, 20000)
+    message = FakeMessage(text="/limits")
+
+    await cmd_limits(message, state=state, session=session, member=member)
+
+    assert "9 800 ₴ / 12 000 ₴" in message.last_reply
+    assert buttons(message.replies[-1][1]) == [
+        "✏️ Їжа · міс",
+        "🗑",
+        "✏️ Загальний · тиж",
+        "🗑",
+        "➕ Додати ліміт",
+    ]
+
+
+async def test_edit_button_jumps_to_amount_step(session, member, category, state):
+    await _set(session, member, Period.MONTH, category.id, 12000)
+    callback = FakeCallback()
+
+    await cb_edit_limit(
+        callback,
+        callback_data=LimitCb(action="edit", period_type="month", category_id=category.id),
+        state=state,
+        session=session,
+        member=member,
+    )
+
+    assert await state.get_state() == SetLimit.amount
+    assert "(зараз: 12 000 ₴)" in callback.message.last_reply
+
+    reply = FakeMessage(text="15000")
+    await enter_limit_amount(reply, state=state, session=session, member=member)
+    assert "(було 12 000 ₴)" in reply.last_reply
+
+
+async def test_delete_asks_then_removes_and_rerenders(session, member, category, state):
+    await _set(session, member, Period.MONTH, category.id, 12000)
+    ask = FakeCallback()
+
+    await cb_ask_delete_limit(
+        ask,
+        callback_data=LimitCb(action="delete", period_type="month", category_id=category.id),
+        state=state,
+        session=session,
+        member=member,
+    )
+    assert "Зняти ліміт «Їжа · місяць»?" in ask.message.last_reply
+
+    confirm = FakeCallback()
+    await cb_delete_limit(
+        confirm,
+        callback_data=LimitCb(action="delete_yes", period_type="month", category_id=category.id),
+        state=state,
+        session=session,
+        member=member,
+    )
+    assert confirm.message.last_edit.startswith("🗑 Ліміт знято.")
+    assert "Лімітів ще немає" in confirm.message.last_edit
+    assert await active_limits(session, member.household_id, utcnow()) == []
+
+
+async def test_double_tap_delete_reports_already_removed(session, member, category, state):
+    await _set(session, member, Period.MONTH, None, 12000)
+    data = LimitCb(action="delete_yes", period_type="month", category_id=0)
+    await cb_delete_limit(
+        FakeCallback(), callback_data=data, state=state, session=session, member=member
+    )
+    second = FakeCallback()
+
+    await cb_delete_limit(second, callback_data=data, state=state, session=session, member=member)
+
+    assert second.answers[-1] == ("Ліміт уже знято.", True)
+    assert second.message.edits == []
+
+
+async def test_edit_of_removed_limit_is_stale(session, member, category, state):
+    callback = FakeCallback()
+
+    await cb_edit_limit(
+        callback,
+        callback_data=LimitCb(action="edit", period_type="week", category_id=0),
+        state=state,
+        session=session,
+        member=member,
+    )
+
+    assert callback.answers[-1] == ("Ліміт уже знято.", True)
+    assert await state.get_state() is None

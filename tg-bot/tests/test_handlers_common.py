@@ -64,3 +64,12 @@ def test_main_menu_has_add_button():
 # it attaches each feature router (a module-level singleton) to the "root"
 # router it returns, and aiogram raises if a router is attached to a second
 # parent — so it can only be called once per test process.
+
+
+def test_help_and_command_menu_list_limits():
+    from budget_bot.__main__ import BOT_COMMANDS
+    from budget_bot.bot.handlers.common import HELP_TEXT
+
+    assert "/limits" in HELP_TEXT and "/setlimit" in HELP_TEXT
+    commands = {command.command for command in BOT_COMMANDS}
+    assert {"limits", "setlimit"} <= commands
