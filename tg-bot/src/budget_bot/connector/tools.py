@@ -18,16 +18,20 @@ from budget_bot.connector.inputs import (
     check_limit,
     check_not_negative,
     parse_date_range,
+    parse_day,
 )
 from budget_bot.connector.schemas import (
     BudgetOverview,
     ExpensePage,
     Granularity,
+    LimitProgressReport,
+    OneTimeFilter,
     SortOrder,
     SpendingSummary,
     SpendingTrend,
     SplitBy,
 )
+from budget_bot.periods import to_kyiv
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +54,13 @@ MemberName = Annotated[
     str | None,
     Field(description="Only expenses recorded by this member, matched by name ignoring case"),
 ]
+OneTimeArg = Annotated[
+    OneTimeFilter,
+    Field(
+        description="all: every expense; exclude: without expenses marked one-time (разова) "
+        "in the bot; only: just those"
+    ),
+]
 
 OVERVIEW_DESCRIPTION = (
     "Returns what the family budget data covers: today's date in Kyiv, the currency (UAH), "
@@ -61,20 +72,31 @@ SUMMARY_DESCRIPTION = (
     "Returns total spending in whole UAH for an inclusive range of Kyiv calendar days: the "
     "number of expenses, a breakdown by category (amount, share of the total in percent, "
     "count) and a breakdown by member (amount, count). Can be narrowed to one category "
-    "and/or one member."
+    "and/or one member. Each amount also carries one_time_amount, the part marked one-time "
+    "in the bot."
 )
 TREND_DESCRIPTION = (
     "Returns spending in whole UAH per calendar week (Monday to Sunday) or per calendar "
     "month, in Kyiv time, across an inclusive date range, optionally split by category or "
     "by member. Weeks or months cut short by the range are marked partial. At most 60 "
-    "buckets per call."
+    "buckets per call. Each bucket and breakdown row also carries one_time_amount, the part "
+    "marked one-time in the bot."
 )
 LIST_DESCRIPTION = (
     "Returns individual expenses for an inclusive range of Kyiv calendar days, one page at a "
     "time: id (the number the bot shows as «Витрата #N»), date and time in Kyiv, amount in "
     "whole UAH, category, the member who recorded it and the description. Filters: category, "
     "member, a case-insensitive text in the description, a minimum amount. Sorted newest "
-    "first, oldest first or largest first."
+    "first, oldest first or largest first. Each item says whether it is marked one-time in "
+    "the bot."
+)
+
+LIMITS_DESCRIPTION = (
+    "Returns spending limits set in the bot with their progress, for the calendar month and "
+    "the Monday-to-Sunday week (Kyiv time) containing the given day, today by default: the "
+    "limit in whole UAH, spending so far without expenses marked one-time, percent used, "
+    "remaining, a linear forecast for the whole period and a status. A past period uses the "
+    "limits in force at its end. Category null means the household-wide limit."
 )
 
 
@@ -108,6 +130,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
         end_date: EndDate,
         category: CategoryName = None,
         member: MemberName = None,
+        one_time: OneTimeArg = "all",
     ) -> SpendingSummary:
         async def work(session: AsyncSession) -> SpendingSummary:
             date_range = parse_date_range(start_date, end_date)
@@ -116,6 +139,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
                 date_range,
                 category=await analytics.find_category(session, category),
                 member=await analytics.find_member(session, member),
+                one_time=one_time,
             )
 
         return await _run("summarize_spending", ctx, session_factory, work)
@@ -139,6 +163,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
         ] = "none",
         category: CategoryName = None,
         member: MemberName = None,
+        one_time: OneTimeArg = "all",
     ) -> SpendingTrend:
         async def work(session: AsyncSession) -> SpendingTrend:
             date_range = parse_date_range(start_date, end_date)
@@ -149,6 +174,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
                 split_by=split_by,
                 category=await analytics.find_category(session, category),
                 member=await analytics.find_member(session, member),
+                one_time=one_time,
             )
 
         return await _run("get_spending_trend", ctx, session_factory, work)
@@ -171,6 +197,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
         min_amount: Annotated[
             int | None, Field(description="Only expenses of at least this many UAH")
         ] = None,
+        one_time: OneTimeArg = "all",
         sort: Annotated[
             SortOrder, Field(description="newest first, oldest first or largest amount first")
         ] = "newest",
@@ -194,9 +221,30 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
                 sort=sort,
                 limit=limit,
                 offset=offset,
+                one_time=one_time,
             )
 
         return await _run("list_expenses", ctx, session_factory, work)
+
+    @server.tool(
+        name="get_limit_progress",
+        title="Прогрес лімітів",
+        description=LIMITS_DESCRIPTION,
+        annotations=READ_ONLY,
+    )
+    async def get_limit_progress(
+        ctx: Context,
+        date: Annotated[
+            str | None,
+            Field(description="A Kyiv calendar day, YYYY-MM-DD, not in the future; default today"),
+        ] = None,
+    ) -> LimitProgressReport:
+        async def work(session: AsyncSession) -> LimitProgressReport:
+            now = utcnow()
+            day = parse_day("date", date) if date is not None else to_kyiv(now).date()
+            return await analytics.limit_progress_report(session, day, now_utc=now)
+
+        return await _run("get_limit_progress", ctx, session_factory, work)
 
     return server
 

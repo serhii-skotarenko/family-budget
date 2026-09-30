@@ -165,3 +165,57 @@ async def test_summary_agrees_with_the_bots_report(early_september, readonly_ses
     assert [(m.name, m.amount) for m in summary.by_member] == [
         (m.display_name, m.amount) for m in report.by_member
     ]
+
+
+async def _summary(session_factory, one_time):
+    async with session_factory() as session:
+        return await summarize_spending(
+            session, SEPTEMBER_1_TO_14, category=None, member=None, one_time=one_time
+        )
+
+
+async def test_summary_all_reports_one_time_parts(september_one_time, readonly_session_factory):
+    summary = await _summary(readonly_session_factory, "all")
+
+    assert summary.one_time == "all"
+    assert (summary.total, summary.one_time_amount, summary.expense_count) == (6850, 5300, 5)
+    assert summary.by_category == [
+        CategorySpending(
+            name="Діти", amount=5000, share_percent=73.0, count=1, one_time_amount=5000
+        ),
+        CategorySpending(name="Їжа", amount=1750, share_percent=25.5, count=3, one_time_amount=300),
+        CategorySpending(name="Транспорт", amount=100, share_percent=1.5, count=1),
+    ]
+    assert summary.by_member == [
+        MemberSpending(name="Оля", amount=6300, count=3, one_time_amount=5000),
+        MemberSpending(name="Сергій", amount=550, count=2, one_time_amount=300),
+    ]
+
+
+async def test_summary_exclude_is_regular_only(september_one_time, readonly_session_factory):
+    summary = await _summary(readonly_session_factory, "exclude")
+
+    assert (summary.total, summary.one_time_amount) == (1550, 0)
+    assert [(c.name, c.amount, c.one_time_amount) for c in summary.by_category] == [
+        ("Їжа", 1450, 0),
+        ("Транспорт", 100, 0),
+    ]
+
+
+async def test_summary_only_one_time(september_one_time, readonly_session_factory):
+    summary = await _summary(readonly_session_factory, "only")
+
+    assert (summary.total, summary.one_time_amount, summary.expense_count) == (5300, 5300, 2)
+    assert [(c.name, c.amount, c.share_percent) for c in summary.by_category] == [
+        ("Діти", 5000, 94.3),
+        ("Їжа", 300, 5.7),
+    ]
+
+
+async def test_summary_only_without_one_time_expenses_is_zero(
+    early_september, readonly_session_factory
+):
+    summary = await _summary(readonly_session_factory, "only")
+
+    assert (summary.total, summary.one_time_amount, summary.expense_count) == (0, 0, 0)
+    assert (summary.by_category, summary.by_member) == ([], [])

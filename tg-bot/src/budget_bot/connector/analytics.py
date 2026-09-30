@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.connector.inputs import MAX_TREND_BUCKETS, DateRange, InvalidRequest
@@ -22,7 +22,11 @@ from budget_bot.connector.schemas import (
     ExpenseItem,
     ExpensePage,
     Granularity,
+    LimitItem,
+    LimitPeriodProgress,
+    LimitProgressReport,
     MemberSpending,
+    OneTimeFilter,
     SortOrder,
     SpendingSummary,
     SpendingTrend,
@@ -30,9 +34,10 @@ from budget_bot.connector.schemas import (
     TrendBucket,
 )
 from budget_bot.models import Category, Expense, Member
-from budget_bot.periods import kyiv_day_range, to_kyiv
+from budget_bot.periods import kyiv_day_range, period_range, to_kyiv
 from budget_bot.services.access import SINGLETON_HOUSEHOLD_ID, list_members
 from budget_bot.services.categories import list_categories, normalize_category_name
+from budget_bot.services.limits import LIMIT_PERIODS, limit_progress, period_days
 
 HOUSEHOLD_ID = SINGLETON_HOUSEHOLD_ID
 TIMEZONE = "Europe/Kyiv"
@@ -96,12 +101,13 @@ async def summarize_spending(
     *,
     category: Category | None,
     member: Member | None,
+    one_time: OneTimeFilter = "all",
 ) -> SpendingSummary:
-    conditions = _conditions(date_range, category, member)
+    conditions = _conditions(date_range, category, member, one_time)
     amount = func.sum(Expense.amount)
     category_rows = (
         await session.execute(
-            select(Category.name, amount, func.count(Expense.id))
+            select(Category.name, amount, func.count(Expense.id), ONE_TIME_SUM)
             .join(Category, Category.id == Expense.category_id)
             .where(*conditions)
             .group_by(Category.id, Category.name)
@@ -110,7 +116,7 @@ async def summarize_spending(
     ).all()
     member_rows = (
         await session.execute(
-            select(Member.display_name, amount, func.count(Expense.id))
+            select(Member.display_name, amount, func.count(Expense.id), ONE_TIME_SUM)
             .join(Member, Member.id == Expense.member_id)
             .where(*conditions)
             .group_by(Member.id, Member.display_name)
@@ -124,22 +130,32 @@ async def summarize_spending(
         end_date=date_range.last,
         category=category.name if category is not None else None,
         member=member.display_name if member is not None else None,
+        one_time=one_time,
         total=total,
+        one_time_amount=sum(row[3] for row in category_rows),
         expense_count=sum(row[2] for row in category_rows),
         by_category=[
             CategorySpending(
-                name=name, amount=value, share_percent=round(value * 100 / total, 1), count=n
+                name=name,
+                amount=value,
+                share_percent=round(value * 100 / total, 1),
+                count=n,
+                one_time_amount=part,
             )
-            for name, value, n in category_rows
+            for name, value, n, part in category_rows
         ],
         by_member=[
-            MemberSpending(name=name, amount=value, count=n) for name, value, n in member_rows
+            MemberSpending(name=name, amount=value, count=n, one_time_amount=part)
+            for name, value, n, part in member_rows
         ],
     )
 
 
 def _conditions(
-    date_range: DateRange, category: Category | None, member: Member | None
+    date_range: DateRange,
+    category: Category | None,
+    member: Member | None,
+    one_time: OneTimeFilter = "all",
 ) -> list[ColumnElement[bool]]:
     period = kyiv_day_range(date_range.first, date_range.last)
     conditions = [
@@ -151,7 +167,15 @@ def _conditions(
         conditions.append(Expense.category_id == category.id)
     if member is not None:
         conditions.append(Expense.member_id == member.id)
+    if one_time == "exclude":
+        conditions.append(Expense.is_one_time.is_(False))
+    elif one_time == "only":
+        conditions.append(Expense.is_one_time.is_(True))
     return conditions
+
+
+# Sum of the one-time part, usable next to func.sum(Expense.amount) in any grouping.
+ONE_TIME_SUM = func.sum(case((Expense.is_one_time, Expense.amount), else_=0))
 
 
 @dataclass(frozen=True)
@@ -194,29 +218,41 @@ async def spending_trend(
     split_by: SplitBy,
     category: Category | None,
     member: Member | None,
+    one_time: OneTimeFilter = "all",
 ) -> SpendingTrend:
     spans = trend_buckets(date_range, granularity)
     rows = (
         await session.execute(
-            select(Expense.created_at, Expense.amount, Category.name, Member.display_name)
+            select(
+                Expense.created_at,
+                Expense.amount,
+                Expense.is_one_time,
+                Category.name,
+                Member.display_name,
+            )
             .join(Category, Category.id == Expense.category_id)
             .join(Member, Member.id == Expense.member_id)
-            .where(*_conditions(date_range, category, member))
+            .where(*_conditions(date_range, category, member, one_time))
         )
     ).all()
 
     starts = [span.first for span in spans]
     totals = [0] * len(spans)
     counts = [0] * len(spans)
-    groups: list[defaultdict[str, list[int]]] = [defaultdict(lambda: [0, 0]) for _ in spans]
-    for created_at, amount, category_name, member_name in rows:
+    one_time_parts = [0] * len(spans)
+    # name -> [amount, count, one-time amount]
+    groups: list[defaultdict[str, list[int]]] = [defaultdict(lambda: [0, 0, 0]) for _ in spans]
+    for created_at, amount, is_one_time, category_name, member_name in rows:
         index = bisect_right(starts, to_kyiv(created_at).date()) - 1
+        part = amount if is_one_time else 0
         totals[index] += amount
         counts[index] += 1
+        one_time_parts[index] += part
         if split_by != "none":
             entry = groups[index][category_name if split_by == "category" else member_name]
             entry[0] += amount
             entry[1] += 1
+            entry[2] += part
 
     return SpendingTrend(
         start_date=date_range.first,
@@ -225,6 +261,7 @@ async def spending_trend(
         split_by=split_by,
         category=category.name if category is not None else None,
         member=member.display_name if member is not None else None,
+        one_time=one_time,
         buckets=[
             TrendBucket(
                 start_date=span.first,
@@ -232,6 +269,7 @@ async def spending_trend(
                 partial=span.partial,
                 total=totals[index],
                 count=counts[index],
+                one_time_amount=one_time_parts[index],
                 breakdown=None if split_by == "none" else _breakdown(groups[index]),
             )
             for index, span in enumerate(spans)
@@ -263,7 +301,10 @@ def _bucket_count(date_range: DateRange, granularity: Granularity) -> int:
 
 def _breakdown(group: dict[str, list[int]]) -> list[BreakdownItem]:
     ordered = sorted(group.items(), key=lambda item: (-item[1][0], item[0]))
-    return [BreakdownItem(name=name, amount=amount, count=n) for name, (amount, n) in ordered]
+    return [
+        BreakdownItem(name=name, amount=amount, count=n, one_time_amount=part)
+        for name, (amount, n, part) in ordered
+    ]
 
 
 _SORTS = {
@@ -284,6 +325,7 @@ async def list_expenses(
     sort: SortOrder,
     limit: int,
     offset: int,
+    one_time: OneTimeFilter = "all",
 ) -> ExpensePage:
     query = (
         select(
@@ -291,12 +333,13 @@ async def list_expenses(
             Expense.created_at,
             Expense.amount,
             Expense.description,
+            Expense.is_one_time,
             Category.name.label("category"),
             Member.display_name.label("member"),
         )
         .join(Category, Category.id == Expense.category_id)
         .join(Member, Member.id == Expense.member_id)
-        .where(*_conditions(date_range, category, member))
+        .where(*_conditions(date_range, category, member, one_time))
     )
     if min_amount is not None:
         query = query.where(Expense.amount >= min_amount)
@@ -319,6 +362,7 @@ async def list_expenses(
                 category=row.category,
                 member=row.member,
                 description=row.description,
+                is_one_time=row.is_one_time,
             )
             for row in page
         ],
@@ -326,3 +370,50 @@ async def list_expenses(
         offset=offset,
         next_offset=offset + limit if offset + limit < len(rows) else None,
     )
+
+
+async def limit_progress_report(
+    session: AsyncSession, day: date, *, now_utc: datetime
+) -> LimitProgressReport:
+    """Limit progress for the month and the week containing ``day``.
+
+    Figures come from services.limits, as in the bot's /limits. A past period
+    is evaluated at its last moment, so it uses the limits in force at its end
+    and its forecast equals what was spent.
+    """
+    today = to_kyiv(now_utc).date()
+    if day > today:
+        raise InvalidRequest(
+            f"date {day.isoformat()} is in the future; today in Kyiv is {today.isoformat()}"
+        )
+
+    anchor = kyiv_day_range(day, day).start
+    periods = []
+    for period_type in LIMIT_PERIODS:
+        bounds = period_range(period_type, anchor)
+        as_of = min(now_utc, bounds.end - timedelta(microseconds=1))
+        day_index, days_in_period = period_days(bounds, as_of)
+        progress = await limit_progress(session, HOUSEHOLD_ID, period_type, as_of)
+        periods.append(
+            LimitPeriodProgress(
+                period_type=period_type.value,
+                start_date=to_kyiv(bounds.start).date(),
+                end_date=to_kyiv(bounds.end).date() - timedelta(days=1),
+                day_index=day_index,
+                days_in_period=days_in_period,
+                complete=now_utc >= bounds.end,
+                limits=[
+                    LimitItem(
+                        category=item.category_name,
+                        amount=item.amount,
+                        spent=item.spent,
+                        percent=item.percent,
+                        remaining=item.remaining,
+                        forecast=item.forecast,
+                        status=item.status.value,
+                    )
+                    for item in progress
+                ],
+            )
+        )
+    return LimitProgressReport(date=day, periods=periods)

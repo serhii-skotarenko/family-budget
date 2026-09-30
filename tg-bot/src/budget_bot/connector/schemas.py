@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field
 Granularity = Literal["week", "month"]
 SplitBy = Literal["none", "category", "member"]
 SortOrder = Literal["newest", "oldest", "largest"]
+OneTimeFilter = Literal["all", "exclude", "only"]
+
+ONE_TIME_AMOUNT = "Part of the amount marked in the bot as one-time (разова)"
 
 
 class CategoryInfo(BaseModel):
@@ -35,12 +38,14 @@ class CategorySpending(BaseModel):
     amount: int
     share_percent: float = Field(description="Share of the total in percent, one decimal")
     count: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
 
 
 class MemberSpending(BaseModel):
     name: str
     amount: int
     count: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
 
 
 class SpendingSummary(BaseModel):
@@ -48,7 +53,9 @@ class SpendingSummary(BaseModel):
     end_date: dt.date
     category: str | None
     member: str | None
+    one_time: OneTimeFilter = "all"
     total: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
     expense_count: int
     by_category: list[CategorySpending]
     by_member: list[MemberSpending]
@@ -58,6 +65,7 @@ class BreakdownItem(BaseModel):
     name: str
     amount: int
     count: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
 
 
 class TrendBucket(BaseModel):
@@ -66,6 +74,7 @@ class TrendBucket(BaseModel):
     partial: bool = Field(description="True when the date range cuts this week or month short")
     total: int
     count: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
     breakdown: list[BreakdownItem] | None
 
 
@@ -76,6 +85,7 @@ class SpendingTrend(BaseModel):
     split_by: SplitBy
     category: str | None
     member: str | None
+    one_time: OneTimeFilter = "all"
     buckets: list[TrendBucket]
 
 
@@ -86,6 +96,7 @@ class ExpenseItem(BaseModel):
     category: str
     member: str = Field(description="Who recorded the expense")
     description: str | None
+    is_one_time: bool = Field(False, description="True when marked one-time (разова) in the bot")
 
 
 class ExpensePage(BaseModel):
@@ -93,3 +104,37 @@ class ExpensePage(BaseModel):
     total_count: int
     offset: int
     next_offset: int | None = Field(description="Offset of the next page; null on the last page")
+
+
+LimitStatusName = Literal["ok", "warn", "over"]
+
+
+class LimitItem(BaseModel):
+    category: str | None = Field(description="Category name; null for the household-wide limit")
+    amount: int = Field(description="The limit, UAH")
+    spent: int = Field(description="Spending in the period without expenses marked one-time")
+    percent: int = Field(description="spent * 100 // amount")
+    remaining: int = Field(description="amount - spent; negative when over the limit")
+    forecast: int = Field(
+        description="spent / day_index * days_in_period, rounded; equals spent once complete"
+    )
+    status: LimitStatusName = Field(
+        description="over: percent >= 100; warn: percent >= 80 or forecast > amount; else ok"
+    )
+
+
+class LimitPeriodProgress(BaseModel):
+    period_type: Literal["month", "week"]
+    start_date: dt.date
+    end_date: dt.date
+    day_index: int = Field(description="Day of the period the figures are for, from 1")
+    days_in_period: int
+    complete: bool = Field(description="True when the period has already ended")
+    limits: list[LimitItem]
+
+
+class LimitProgressReport(BaseModel):
+    date: dt.date
+    periods: list[LimitPeriodProgress] = Field(
+        description="The calendar month and the Monday-to-Sunday week containing date, in Kyiv"
+    )

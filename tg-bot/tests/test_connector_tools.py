@@ -6,6 +6,7 @@ from mcp import Client
 
 from budget_bot.connector.tools import INTERNAL_ERROR_TEXT, build_mcp_server
 from budget_bot.db import create_readonly_engine, create_session_factory
+from tests.conftest import kyiv
 
 SEPTEMBER = {"start_date": "2026-09-01", "end_date": "2026-09-30"}
 
@@ -28,6 +29,7 @@ async def test_every_tool_is_titled_and_read_only(readonly_session_factory):
         "summarize_spending",
         "get_spending_trend",
         "list_expenses",
+        "get_limit_progress",
     }
     for tool in tools:
         assert tool.title, tool.name
@@ -47,10 +49,20 @@ async def test_results_arrive_as_structured_content(early_september, readonly_se
         "end_date": "2026-09-14",
         "category": "Їжа",
         "member": None,
+        "one_time": "all",
         "total": 1200,
+        "one_time_amount": 0,
         "expense_count": 1,
-        "by_category": [{"name": "Їжа", "amount": 1200, "share_percent": 100.0, "count": 1}],
-        "by_member": [{"name": "Оля", "amount": 1200, "count": 1}],
+        "by_category": [
+            {
+                "name": "Їжа",
+                "amount": 1200,
+                "share_percent": 100.0,
+                "count": 1,
+                "one_time_amount": 0,
+            }
+        ],
+        "by_member": [{"name": "Оля", "amount": 1200, "count": 1, "one_time_amount": 0}],
     }
 
 
@@ -77,6 +89,8 @@ async def test_results_arrive_as_structured_content(early_september, readonly_se
         ("list_expenses", {**SEPTEMBER, "limit": 500}, "limit must be between 1 and 200"),
         ("list_expenses", {**SEPTEMBER, "offset": -1}, "offset must be 0 or greater"),
         ("list_expenses", {**SEPTEMBER, "min_amount": -5}, "min_amount must be 0 or greater"),
+        ("get_limit_progress", {"date": "2100-12-31"}, "is in the future"),
+        ("get_limit_progress", {"date": "14.09.2026"}, "YYYY-MM-DD"),
     ],
 )
 async def test_fixable_mistakes_come_back_as_errors_with_a_hint(
@@ -140,3 +154,42 @@ async def test_calls_are_logged_with_their_outcome_but_never_with_data(
     assert "MCP tool summarize_spending by -: invalid_request in" in caplog.text
     for data in ("таксі", "Таксі", "Кава", "Оля", "Транспорт"):
         assert data not in caplog.text
+
+
+async def test_summarize_accepts_one_time_filter(september_one_time, readonly_session_factory):
+    result = await call(
+        readonly_session_factory,
+        "summarize_spending",
+        {"start_date": "2026-09-01", "end_date": "2026-09-14", "one_time": "exclude"},
+    )
+
+    assert result.is_error is False
+    assert result.structured_content["total"] == 1550
+    assert result.structured_content["one_time"] == "exclude"
+
+
+async def test_list_expenses_accepts_one_time_filter(september_one_time, readonly_session_factory):
+    result = await call(
+        readonly_session_factory, "list_expenses", {**SEPTEMBER, "one_time": "only"}
+    )
+
+    assert result.is_error is False
+    items = result.structured_content["items"]
+    assert [(item["amount"], item["is_one_time"]) for item in items] == [(300, True), (5000, True)]
+
+
+async def test_limit_progress_for_a_past_day(
+    early_september, budget_writer, readonly_session_factory
+):
+    await budget_writer.set_limit(period="week", category=None, amount=3000, at=kyiv(2026, 9, 1))
+
+    result = await call(readonly_session_factory, "get_limit_progress", {"date": "2026-09-14"})
+
+    assert result.is_error is False
+    week = result.structured_content["periods"][1]
+    assert (week["period_type"], week["start_date"], week["complete"]) == (
+        "week",
+        "2026-09-14",
+        True,
+    )
+    assert week["limits"][0]["spent"] == 1800

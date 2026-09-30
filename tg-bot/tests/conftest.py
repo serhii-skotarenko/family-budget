@@ -13,10 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from budget_bot.config import Settings
 from budget_bot.db import create_engine, create_readonly_engine, create_session_factory
 from budget_bot.models import Base, Category, Household, Member
-from budget_bot.periods import KYIV
+from budget_bot.periods import KYIV, Period
 from budget_bot.services.access import SINGLETON_HOUSEHOLD_ID
 from budget_bot.services.categories import ensure_default_categories, list_categories
 from budget_bot.services.expenses import create_expense
+from budget_bot.services.limits import set_limit
 
 
 @pytest_asyncio.fixture
@@ -211,6 +212,7 @@ class BudgetWriter:
         amount: int,
         at: datetime,
         description: str | None = None,
+        one_time: bool = False,
     ) -> None:
         async with self._factory() as db_session:
             category_id = await db_session.scalar(
@@ -226,7 +228,31 @@ class BudgetWriter:
                 category_id=category_id,
                 amount=amount,
                 description=description,
+                is_one_time=one_time,
                 created_at=at,
+            )
+            await db_session.commit()
+
+    async def set_limit(
+        self, *, period: str, category: str | None, amount: int, at: datetime
+    ) -> None:
+        async with self._factory() as db_session:
+            category_id = (
+                await db_session.scalar(select(Category.id).where(Category.name == category))
+                if category is not None
+                else None
+            )
+            member_id = await db_session.scalar(
+                select(Member.id).where(Member.display_name == "Сергій")
+            )
+            await set_limit(
+                db_session,
+                household_id=SINGLETON_HOUSEHOLD_ID,
+                member_id=member_id,
+                period_type=Period(period),
+                category_id=category_id,
+                amount=amount,
+                now=at,
             )
             await db_session.commit()
 
@@ -287,6 +313,20 @@ async def early_september(budget_writer) -> None:
         description="Кіно",
     )
     await add(category="Їжа", member="Сергій", amount=350, at=kyiv(2026, 8, 31, 23, 59))
+
+
+@pytest_asyncio.fixture
+async def september_one_time(early_september, budget_writer) -> None:
+    """``early_september`` plus two one-time expenses (ids 6 and 7):
+
+    | id | when (Kyiv)      | amount | category | member | one-time |
+    |----|------------------|--------|----------|--------|----------|
+    | 6  | 2026-09-10 10:00 | 5000   | Діти     | Оля    | yes      |
+    | 7  | 2026-09-12 10:00 | 300    | Їжа      | Сергій | yes      |
+    """
+    add = budget_writer.add_expense
+    await add(category="Діти", member="Оля", amount=5000, at=kyiv(2026, 9, 10, 10), one_time=True)
+    await add(category="Їжа", member="Сергій", amount=300, at=kyiv(2026, 9, 12, 10), one_time=True)
 
 
 @pytest_asyncio.fixture

@@ -165,3 +165,43 @@ async def test_week_boundary_follows_kyiv_time_across_the_dst_switch(
         (date(2026, 10, 19), date(2026, 10, 25), False, 300),
         (date(2026, 10, 26), date(2026, 10, 26), True, 200),
     ]
+
+
+async def _weekly(session_factory, one_time, split_by="category"):
+    async with session_factory() as session:
+        return await spending_trend(
+            session,
+            SEPTEMBER_1_TO_14,
+            granularity="week",
+            split_by=split_by,
+            category=None,
+            member=None,
+            one_time=one_time,
+        )
+
+
+async def test_trend_all_carries_one_time_parts(september_one_time, readonly_session_factory):
+    trend = await _weekly(readonly_session_factory, "all")
+
+    assert trend.one_time == "all"
+    assert [(b.total, b.one_time_amount) for b in trend.buckets] == [
+        (350, 0),
+        (5300, 5300),
+        (1200, 0),
+    ]
+    assert trend.buckets[1].breakdown == [
+        BreakdownItem(name="Діти", amount=5000, count=1, one_time_amount=5000),
+        BreakdownItem(name="Їжа", amount=300, count=1, one_time_amount=300),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("one_time", "totals"),
+    [("exclude", [350, 0, 1200]), ("only", [0, 5300, 0])],
+)
+async def test_trend_one_time_filter(
+    september_one_time, readonly_session_factory, one_time, totals
+):
+    trend = await _weekly(readonly_session_factory, one_time, split_by="none")
+
+    assert [b.total for b in trend.buckets] == totals
