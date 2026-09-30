@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from statistics import median
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from budget_bot.clock import utcnow
 from budget_bot.models import Expense
 from budget_bot.periods import PeriodRange
+
+# Anomaly warning: an amount above ANOMALY_FACTOR × the median of the latest
+# ANOMALY_SAMPLE regular expenses in the category. Fewer than
+# ANOMALY_MIN_SAMPLE regular expenses → no opinion.
+ANOMALY_SAMPLE = 20
+ANOMALY_MIN_SAMPLE = 5
+ANOMALY_FACTOR = 3
 
 
 @dataclass(frozen=True)
@@ -27,6 +35,7 @@ async def create_expense(
     category_id: int,
     amount: int,
     description: str | None = None,
+    is_one_time: bool = False,
     created_at: datetime | None = None,
 ) -> Expense:
     expense = Expense(
@@ -35,6 +44,7 @@ async def create_expense(
         category_id=category_id,
         amount=amount,
         description=description,
+        is_one_time=is_one_time,
         created_at=created_at or utcnow(),
     )
     session.add(expense)
@@ -107,3 +117,37 @@ async def update_expense(
 async def delete_expense(session: AsyncSession, expense: Expense) -> None:
     await session.delete(expense)
     await session.flush()
+
+
+async def set_one_time(
+    session: AsyncSession, expense: Expense, *, editor_id: int, value: bool
+) -> Expense:
+    """Toggle the one-time flag; recorded as an edit like any other."""
+    expense.is_one_time = value
+    expense.updated_by_id = editor_id
+    expense.updated_at = utcnow()
+    await session.flush()
+    await session.refresh(expense)
+    return expense
+
+
+async def typical_amount(session: AsyncSession, household_id: int, category_id: int) -> int | None:
+    amounts = list(
+        await session.scalars(
+            select(Expense.amount)
+            .where(
+                Expense.household_id == household_id,
+                Expense.category_id == category_id,
+                Expense.is_one_time.is_(False),
+            )
+            .order_by(Expense.created_at.desc(), Expense.id.desc())
+            .limit(ANOMALY_SAMPLE)
+        )
+    )
+    if len(amounts) < ANOMALY_MIN_SAMPLE:
+        return None
+    return round(median(amounts))
+
+
+def is_anomalous(amount: int, typical: int | None) -> bool:
+    return typical is not None and amount > ANOMALY_FACTOR * typical

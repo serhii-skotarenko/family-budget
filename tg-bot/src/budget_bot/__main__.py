@@ -28,6 +28,8 @@ BOT_COMMANDS = [
     BotCommand(command="list", description="Останні витрати"),
     BotCommand(command="filter", description="Фільтр витрат"),
     BotCommand(command="report", description="Звіт за період"),
+    BotCommand(command="limits", description="Ліміти та прогрес"),
+    BotCommand(command="setlimit", description="Встановити ліміт"),
     BotCommand(command="categories", description="Категорії"),
     BotCommand(command="cancel", description="Перервати діалог"),
 ]

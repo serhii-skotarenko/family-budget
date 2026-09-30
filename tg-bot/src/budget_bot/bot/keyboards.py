@@ -5,9 +5,18 @@ from collections.abc import Sequence
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
-from budget_bot.bot.callbacks import CategoryCb, EditFieldCb, ExpenseCb, FilterCb, FlowCb, ReportCb
+from budget_bot.bot.callbacks import (
+    CategoryCb,
+    EditFieldCb,
+    ExpenseCb,
+    FilterCb,
+    FlowCb,
+    LimitCb,
+    ReportCb,
+)
 from budget_bot.models import Category, Expense, Member
-from budget_bot.periods import PERIOD_TITLES, Period
+from budget_bot.periods import LIMIT_PERIOD_SHORT, LIMIT_PERIOD_TITLES, PERIOD_TITLES, Period
+from budget_bot.services.limits import GENERAL_LIMIT_NAME, LimitProgress
 
 BTN_ADD = "➕ Витрата"
 BTN_LIST = "📋 Список"
@@ -60,11 +69,15 @@ def description_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def confirm_keyboard() -> InlineKeyboardMarkup:
+def confirm_keyboard(is_one_time: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.button(
+        text=f"{'☑' if is_one_time else '☐'} Разова",
+        callback_data=FlowCb(action="toggle_one_time"),
+    )
     builder.button(text="✅ Зберегти", callback_data=FlowCb(action="save"))
     builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
-    builder.adjust(2)
+    builder.adjust(1, 2)
     return builder.as_markup()
 
 
@@ -79,7 +92,7 @@ def expense_index_keyboard(expenses: Sequence[Expense]) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def expense_card_keyboard(expense_id: int) -> InlineKeyboardMarkup:
+def expense_card_keyboard(expense_id: int, is_one_time: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text="✏️ Редагувати", callback_data=ExpenseCb(action="edit", expense_id=expense_id)
@@ -87,7 +100,11 @@ def expense_card_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     builder.button(
         text="🗑 Видалити", callback_data=ExpenseCb(action="delete", expense_id=expense_id)
     )
-    builder.adjust(2)
+    builder.button(
+        text="↩️ Зняти позначку разової" if is_one_time else "🔁 Позначити як разову",
+        callback_data=ExpenseCb(action="toggle_one_time", expense_id=expense_id),
+    )
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 
@@ -156,4 +173,70 @@ def report_periods_keyboard() -> InlineKeyboardMarkup:
     for period in REPORT_PERIODS:
         builder.button(text=PERIOD_TITLES[period], callback_data=ReportCb(period=period.value))
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def limit_periods_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for period in (Period.WEEK, Period.MONTH):
+        builder.button(
+            text=LIMIT_PERIOD_TITLES[period].capitalize(),
+            callback_data=LimitCb(action="period", period_type=period.value),
+        )
+    builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def limit_categories_keyboard(
+    period_type: Period, categories: Sequence[Category]
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=f"🌐 {GENERAL_LIMIT_NAME}",
+        callback_data=LimitCb(action="category", period_type=period_type.value, category_id=0),
+    )
+    for item in categories:
+        builder.button(
+            text=item.name,
+            callback_data=LimitCb(
+                action="category", period_type=period_type.value, category_id=item.id
+            ),
+        )
+    builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def limits_keyboard(progress: Sequence[LimitProgress]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for item in progress:
+        target = {"period_type": item.period_type.value, "category_id": item.category_id or 0}
+        builder.button(
+            text=f"✏️ {item.name} · {LIMIT_PERIOD_SHORT[item.period_type]}",
+            callback_data=LimitCb(action="edit", **target),
+        )
+        builder.button(text="🗑", callback_data=LimitCb(action="delete", **target))
+    builder.button(text="➕ Додати ліміт", callback_data=LimitCb(action="add"))
+    builder.adjust(*([2] * len(progress)), 1)
+    return builder.as_markup()
+
+
+def limit_delete_confirm_keyboard(period_type: Period, category_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🗑 Так, зняти",
+        callback_data=LimitCb(
+            action="delete_yes", period_type=period_type.value, category_id=category_id
+        ),
+    )
+    # Not FlowCb(action="cancel"): that one clears the FSM state, which would
+    # silently drop a dialog started after this prompt was shown.
+    builder.button(
+        text="↩️ Ні",
+        callback_data=LimitCb(
+            action="delete_no", period_type=period_type.value, category_id=category_id
+        ),
+    )
+    builder.adjust(2)
     return builder.as_markup()

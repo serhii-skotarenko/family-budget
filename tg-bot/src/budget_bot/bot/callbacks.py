@@ -9,7 +9,7 @@ class CategoryCb(CallbackData, prefix="cat"):
 
 
 class ExpenseCb(CallbackData, prefix="exp"):
-    action: str  # "view" | "edit" | "delete" | "delete_yes" | "back"
+    action: str  # "view" | "edit" | "delete" | "delete_yes" | "back" | "toggle_one_time"
     expense_id: int
 
 
@@ -28,4 +28,10 @@ class FilterCb(CallbackData, prefix="flt"):
 
 
 class FlowCb(CallbackData, prefix="flow"):
-    action: str  # "cancel" | "skip" | "save" | "add_category"
+    action: str  # "cancel" | "skip" | "save" | "add_category" | "toggle_one_time"
+
+
+class LimitCb(CallbackData, prefix="lim"):
+    action: str  # "period" | "category" | "add" | "edit" | "delete" | "delete_yes" | "delete_no"
+    period_type: str = ""  # a budget_bot.periods.Period value (week | month)
+    category_id: int = 0  # 0 = the household-wide limit

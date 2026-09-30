@@ -42,6 +42,16 @@ PERIOD_TITLES = {
     Period.YEAR: "Поточний рік",
 }
 
+LIMIT_PERIOD_TITLES = {
+    Period.WEEK: "тиждень",
+    Period.MONTH: "місяць",
+}
+
+LIMIT_PERIOD_SHORT = {
+    Period.WEEK: "тиж",
+    Period.MONTH: "міс",
+}
+
 
 @dataclass(frozen=True)
 class PeriodRange:
