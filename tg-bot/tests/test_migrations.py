@@ -85,41 +85,30 @@ def test_0002_keeps_existing_expenses_regular_and_downgrades_cleanly(tmp_path):
     assert amounts == [(250,)]
 
 
-def test_0003_adds_connectivity_only_where_missing_and_keeps_it_on_downgrade(tmp_path):
+def test_0003_adds_incomes_and_leaves_categories_alone(tmp_path):
     db_path = tmp_path / "old.sqlite3"
     _alembic(db_path, "upgrade", "0002")
     connection = sqlite3.connect(db_path)
     with connection:
-        for household_id in (1, 2, 3):
-            connection.execute(
-                "INSERT INTO households (id, name, created_at) VALUES (?, 'h', '2026-09-01')",
-                (household_id,),
-            )
-        # 1: defaults without «Зв'язок»; 2: already has it (custom, other case);
-        # 3: no categories at all yet.
         connection.execute(
-            "INSERT INTO categories (household_id, name, name_normalized, is_custom, created_at) "
-            "VALUES (1, 'Їжа', 'їжа', 0, '2026-09-01')"
+            "INSERT INTO households (id, name, created_at) VALUES (1, 'h', '2026-09-01')"
         )
         connection.execute(
             "INSERT INTO categories (household_id, name, name_normalized, is_custom, created_at) "
-            "VALUES (2, 'ЗВ''ЯЗОК', 'зв''язок', 1, '2026-09-01')"
+            "VALUES (1, 'Їжа', 'їжа', 0, '2026-09-01')"
         )
     connection.close()
 
     _alembic(db_path, "upgrade", "head")
     connection = sqlite3.connect(db_path)
-    rows = connection.execute(
-        "SELECT household_id, name, name_normalized, is_custom FROM categories "
-        "WHERE name_normalized = 'зв''язок' ORDER BY household_id"
-    ).fetchall()
+    names = [row[0] for row in connection.execute("SELECT name FROM categories")]
+    tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master")]
     connection.close()
-    assert rows == [(1, "Зв'язок", "зв'язок", 0), (2, "ЗВ'ЯЗОК", "зв'язок", 1)]
+    assert names == ["Їжа"]
+    assert "incomes" in tables
 
     _alembic(db_path, "downgrade", "0002")
     connection = sqlite3.connect(db_path)
     tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master")]
-    kept = connection.execute("SELECT COUNT(*) FROM categories WHERE name = 'Зв''язок'").fetchone()
     connection.close()
     assert "incomes" not in tables
-    assert kept == (1,)
