@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field
 Granularity = Literal["week", "month"]
 SplitBy = Literal["none", "category", "member"]
 SortOrder = Literal["newest", "oldest", "largest"]
+OneTimeFilter = Literal["all", "exclude", "only"]
+
+ONE_TIME_AMOUNT = "Part of the amount marked in the bot as one-time (разова)"
 
 
 class CategoryInfo(BaseModel):
@@ -35,12 +38,14 @@ class CategorySpending(BaseModel):
     amount: int
     share_percent: float = Field(description="Share of the total in percent, one decimal")
     count: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
 
 
 class MemberSpending(BaseModel):
     name: str
     amount: int
     count: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
 
 
 class SpendingSummary(BaseModel):
@@ -48,7 +53,9 @@ class SpendingSummary(BaseModel):
     end_date: dt.date
     category: str | None
     member: str | None
+    one_time: OneTimeFilter = "all"
     total: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
     expense_count: int
     by_category: list[CategorySpending]
     by_member: list[MemberSpending]

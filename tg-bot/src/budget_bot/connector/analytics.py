@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from budget_bot.connector.inputs import MAX_TREND_BUCKETS, DateRange, InvalidRequest
@@ -23,6 +23,7 @@ from budget_bot.connector.schemas import (
     ExpensePage,
     Granularity,
     MemberSpending,
+    OneTimeFilter,
     SortOrder,
     SpendingSummary,
     SpendingTrend,
@@ -96,12 +97,13 @@ async def summarize_spending(
     *,
     category: Category | None,
     member: Member | None,
+    one_time: OneTimeFilter = "all",
 ) -> SpendingSummary:
-    conditions = _conditions(date_range, category, member)
+    conditions = _conditions(date_range, category, member, one_time)
     amount = func.sum(Expense.amount)
     category_rows = (
         await session.execute(
-            select(Category.name, amount, func.count(Expense.id))
+            select(Category.name, amount, func.count(Expense.id), ONE_TIME_SUM)
             .join(Category, Category.id == Expense.category_id)
             .where(*conditions)
             .group_by(Category.id, Category.name)
@@ -110,7 +112,7 @@ async def summarize_spending(
     ).all()
     member_rows = (
         await session.execute(
-            select(Member.display_name, amount, func.count(Expense.id))
+            select(Member.display_name, amount, func.count(Expense.id), ONE_TIME_SUM)
             .join(Member, Member.id == Expense.member_id)
             .where(*conditions)
             .group_by(Member.id, Member.display_name)
@@ -124,22 +126,32 @@ async def summarize_spending(
         end_date=date_range.last,
         category=category.name if category is not None else None,
         member=member.display_name if member is not None else None,
+        one_time=one_time,
         total=total,
+        one_time_amount=sum(row[3] for row in category_rows),
         expense_count=sum(row[2] for row in category_rows),
         by_category=[
             CategorySpending(
-                name=name, amount=value, share_percent=round(value * 100 / total, 1), count=n
+                name=name,
+                amount=value,
+                share_percent=round(value * 100 / total, 1),
+                count=n,
+                one_time_amount=part,
             )
-            for name, value, n in category_rows
+            for name, value, n, part in category_rows
         ],
         by_member=[
-            MemberSpending(name=name, amount=value, count=n) for name, value, n in member_rows
+            MemberSpending(name=name, amount=value, count=n, one_time_amount=part)
+            for name, value, n, part in member_rows
         ],
     )
 
 
 def _conditions(
-    date_range: DateRange, category: Category | None, member: Member | None
+    date_range: DateRange,
+    category: Category | None,
+    member: Member | None,
+    one_time: OneTimeFilter = "all",
 ) -> list[ColumnElement[bool]]:
     period = kyiv_day_range(date_range.first, date_range.last)
     conditions = [
@@ -151,7 +163,15 @@ def _conditions(
         conditions.append(Expense.category_id == category.id)
     if member is not None:
         conditions.append(Expense.member_id == member.id)
+    if one_time == "exclude":
+        conditions.append(Expense.is_one_time.is_(False))
+    elif one_time == "only":
+        conditions.append(Expense.is_one_time.is_(True))
     return conditions
+
+
+# Sum of the one-time part, usable next to func.sum(Expense.amount) in any grouping.
+ONE_TIME_SUM = func.sum(case((Expense.is_one_time, Expense.amount), else_=0))
 
 
 @dataclass(frozen=True)

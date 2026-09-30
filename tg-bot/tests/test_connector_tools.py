@@ -47,10 +47,20 @@ async def test_results_arrive_as_structured_content(early_september, readonly_se
         "end_date": "2026-09-14",
         "category": "Їжа",
         "member": None,
+        "one_time": "all",
         "total": 1200,
+        "one_time_amount": 0,
         "expense_count": 1,
-        "by_category": [{"name": "Їжа", "amount": 1200, "share_percent": 100.0, "count": 1}],
-        "by_member": [{"name": "Оля", "amount": 1200, "count": 1}],
+        "by_category": [
+            {
+                "name": "Їжа",
+                "amount": 1200,
+                "share_percent": 100.0,
+                "count": 1,
+                "one_time_amount": 0,
+            }
+        ],
+        "by_member": [{"name": "Оля", "amount": 1200, "count": 1, "one_time_amount": 0}],
     }
 
 
@@ -140,3 +150,15 @@ async def test_calls_are_logged_with_their_outcome_but_never_with_data(
     assert "MCP tool summarize_spending by -: invalid_request in" in caplog.text
     for data in ("таксі", "Таксі", "Кава", "Оля", "Транспорт"):
         assert data not in caplog.text
+
+
+async def test_summarize_accepts_one_time_filter(september_one_time, readonly_session_factory):
+    result = await call(
+        readonly_session_factory,
+        "summarize_spending",
+        {"start_date": "2026-09-01", "end_date": "2026-09-14", "one_time": "exclude"},
+    )
+
+    assert result.is_error is False
+    assert result.structured_content["total"] == 1550
+    assert result.structured_content["one_time"] == "exclude"

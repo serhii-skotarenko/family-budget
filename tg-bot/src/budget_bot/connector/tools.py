@@ -23,6 +23,7 @@ from budget_bot.connector.schemas import (
     BudgetOverview,
     ExpensePage,
     Granularity,
+    OneTimeFilter,
     SortOrder,
     SpendingSummary,
     SpendingTrend,
@@ -50,6 +51,13 @@ MemberName = Annotated[
     str | None,
     Field(description="Only expenses recorded by this member, matched by name ignoring case"),
 ]
+OneTimeArg = Annotated[
+    OneTimeFilter,
+    Field(
+        description="all: every expense; exclude: without expenses marked one-time (разова) "
+        "in the bot; only: just those"
+    ),
+]
 
 OVERVIEW_DESCRIPTION = (
     "Returns what the family budget data covers: today's date in Kyiv, the currency (UAH), "
@@ -61,7 +69,8 @@ SUMMARY_DESCRIPTION = (
     "Returns total spending in whole UAH for an inclusive range of Kyiv calendar days: the "
     "number of expenses, a breakdown by category (amount, share of the total in percent, "
     "count) and a breakdown by member (amount, count). Can be narrowed to one category "
-    "and/or one member."
+    "and/or one member. Each amount also carries one_time_amount, the part marked one-time "
+    "in the bot."
 )
 TREND_DESCRIPTION = (
     "Returns spending in whole UAH per calendar week (Monday to Sunday) or per calendar "
@@ -108,6 +117,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
         end_date: EndDate,
         category: CategoryName = None,
         member: MemberName = None,
+        one_time: OneTimeArg = "all",
     ) -> SpendingSummary:
         async def work(session: AsyncSession) -> SpendingSummary:
             date_range = parse_date_range(start_date, end_date)
@@ -116,6 +126,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
                 date_range,
                 category=await analytics.find_category(session, category),
                 member=await analytics.find_member(session, member),
+                one_time=one_time,
             )
 
         return await _run("summarize_spending", ctx, session_factory, work)
