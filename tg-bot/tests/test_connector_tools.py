@@ -30,6 +30,7 @@ async def test_every_tool_is_titled_and_read_only(readonly_session_factory):
         "get_spending_trend",
         "list_expenses",
         "get_limit_progress",
+        "get_cashflow",
     }
     for tool in tools:
         assert tool.title, tool.name
@@ -193,3 +194,24 @@ async def test_limit_progress_for_a_past_day(
         True,
     )
     assert week["limits"][0]["spent"] == 1800
+
+
+async def test_get_cashflow_through_the_client(
+    early_september, budget_writer, readonly_session_factory
+):
+    await budget_writer.set_income(amount=300000, at=kyiv(2026, 9, 5))
+
+    result = await call(
+        readonly_session_factory,
+        "get_cashflow",
+        {"start_date": "2026-09-01", "end_date": "2026-09-30"},
+    )
+
+    assert result.is_error is False
+    (september,) = result.structured_content["months"]
+    # 250 + 100 + 1200 + 600 in September.
+    assert (september["income"], september["spent"], september["free_cashflow"]) == (
+        300000,
+        2150,
+        297850,
+    )

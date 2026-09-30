@@ -22,6 +22,7 @@ from budget_bot.connector.inputs import (
 )
 from budget_bot.connector.schemas import (
     BudgetOverview,
+    CashflowReport,
     ExpensePage,
     Granularity,
     LimitProgressReport,
@@ -64,9 +65,9 @@ OneTimeArg = Annotated[
 
 OVERVIEW_DESCRIPTION = (
     "Returns what the family budget data covers: today's date in Kyiv, the currency (UAH), "
-    "household members, expense categories, the dates of the first and last recorded expense "
-    "and the number of expenses. Expense dates are when an expense was recorded in the "
-    "Telegram bot."
+    "household members, expense categories, the dates of the first and last recorded expense, "
+    "the number of expenses and the monthly household income in force now (null if never "
+    "set). Expense dates are when an expense was recorded in the Telegram bot."
 )
 SUMMARY_DESCRIPTION = (
     "Returns total spending in whole UAH for an inclusive range of Kyiv calendar days: the "
@@ -97,6 +98,14 @@ LIMITS_DESCRIPTION = (
     "limit in whole UAH, spending so far without expenses marked one-time, percent used, "
     "remaining, a linear forecast for the whole period and a status. A past period uses the "
     "limits in force at its end. Category null means the household-wide limit."
+)
+
+CASHFLOW_DESCRIPTION = (
+    "Returns, for each whole calendar month (Kyiv time) overlapping an inclusive date range, "
+    "up to the current month: the monthly household income set in the bot (null before it "
+    "was first set), all spending in whole UAH including expenses marked one-time, the "
+    "one-time part, free cashflow (income minus spending, null without an income) and "
+    "whether the month has ended. At most 60 months per call."
 )
 
 
@@ -245,6 +254,21 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
             return await analytics.limit_progress_report(session, day, now_utc=now)
 
         return await _run("get_limit_progress", ctx, session_factory, work)
+
+    @server.tool(
+        name="get_cashflow",
+        title="Дохід і кешфлоу",
+        description=CASHFLOW_DESCRIPTION,
+        annotations=READ_ONLY,
+    )
+    async def get_cashflow(
+        ctx: Context, start_date: StartDate, end_date: EndDate
+    ) -> CashflowReport:
+        async def work(session: AsyncSession) -> CashflowReport:
+            date_range = parse_date_range(start_date, end_date)
+            return await analytics.cashflow_report(session, date_range, now_utc=utcnow())
+
+        return await _run("get_cashflow", ctx, session_factory, work)
 
     return server
 
