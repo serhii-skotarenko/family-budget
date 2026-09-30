@@ -31,6 +31,9 @@ class BudgetOverview(BaseModel):
     first_expense_date: dt.date | None = Field(description="Kyiv date of the earliest expense")
     last_expense_date: dt.date | None = Field(description="Kyiv date of the latest expense")
     expense_count: int
+    current_monthly_income: int | None = Field(
+        None, description="Monthly household income in force now, UAH; null if never set"
+    )
 
 
 class CategorySpending(BaseModel):
@@ -137,4 +140,22 @@ class LimitProgressReport(BaseModel):
     date: dt.date
     periods: list[LimitPeriodProgress] = Field(
         description="The calendar month and the Monday-to-Sunday week containing date, in Kyiv"
+    )
+
+
+class CashflowMonth(BaseModel):
+    month_start: dt.date
+    month_end: dt.date
+    income: int | None = Field(description="Income in force in this month, UAH; null if not set")
+    spent: int = Field(description="All expenses of the month, one-time included")
+    one_time_amount: int = Field(description=ONE_TIME_AMOUNT)
+    free_cashflow: int | None = Field(description="income - spent; null without an income")
+    complete: bool = Field(description="True when the month has already ended")
+
+
+class CashflowReport(BaseModel):
+    start_date: dt.date
+    end_date: dt.date
+    months: list[CashflowMonth] = Field(
+        description="Whole calendar months (Kyiv) overlapping the range, up to the current one"
     )

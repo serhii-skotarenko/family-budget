@@ -83,3 +83,32 @@ def test_0002_keeps_existing_expenses_regular_and_downgrades_cleanly(tmp_path):
     assert "is_one_time" not in columns
     assert "limits" not in tables
     assert amounts == [(250,)]
+
+
+def test_0003_adds_incomes_and_leaves_categories_alone(tmp_path):
+    db_path = tmp_path / "old.sqlite3"
+    _alembic(db_path, "upgrade", "0002")
+    connection = sqlite3.connect(db_path)
+    with connection:
+        connection.execute(
+            "INSERT INTO households (id, name, created_at) VALUES (1, 'h', '2026-09-01')"
+        )
+        connection.execute(
+            "INSERT INTO categories (household_id, name, name_normalized, is_custom, created_at) "
+            "VALUES (1, 'Їжа', 'їжа', 0, '2026-09-01')"
+        )
+    connection.close()
+
+    _alembic(db_path, "upgrade", "head")
+    connection = sqlite3.connect(db_path)
+    names = [row[0] for row in connection.execute("SELECT name FROM categories")]
+    tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master")]
+    connection.close()
+    assert names == ["Їжа"]
+    assert "incomes" in tables
+
+    _alembic(db_path, "downgrade", "0002")
+    connection = sqlite3.connect(db_path)
+    tables = [row[0] for row in connection.execute("SELECT name FROM sqlite_master")]
+    connection.close()
+    assert "incomes" not in tables

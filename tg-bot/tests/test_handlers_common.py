@@ -73,3 +73,11 @@ def test_help_and_command_menu_list_limits():
     assert "/limits" in HELP_TEXT and "/setlimit" in HELP_TEXT
     commands = {command.command for command in BOT_COMMANDS}
     assert {"limits", "setlimit"} <= commands
+
+
+def test_help_and_command_menu_list_setincome():
+    from budget_bot.__main__ import BOT_COMMANDS
+    from budget_bot.bot.handlers.common import HELP_TEXT
+
+    assert "/setincome" in HELP_TEXT
+    assert "setincome" in {command.command for command in BOT_COMMANDS}

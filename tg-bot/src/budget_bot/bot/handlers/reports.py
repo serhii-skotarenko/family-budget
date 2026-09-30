@@ -1,5 +1,7 @@
 """/report: текстовий звіт за календарний тиждень / місяць / рік."""
 
+from datetime import date
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -12,7 +14,8 @@ from budget_bot.bot.replies import edit_or_answer
 from budget_bot.clock import utcnow
 from budget_bot.formatting import format_report
 from budget_bot.models import Member
-from budget_bot.periods import Period, period_range
+from budget_bot.periods import Period, period_range, to_kyiv
+from budget_bot.services.income import cashflow, month_first
 from budget_bot.services.limits import LIMIT_PERIODS, limit_progress
 from budget_bot.services.reports import build_report
 
@@ -41,5 +44,16 @@ async def cb_report(
         if report_period in LIMIT_PERIODS
         else []
     )
-    await edit_or_answer(callback, format_report(report, limits))
+    this_month = month_first(to_kyiv(now).date())
+    if report_period is Period.MONTH:
+        cash = await cashflow(session, member.household_id, this_month, this_month, now)
+    elif report_period is Period.YEAR:
+        january = date(this_month.year, 1, 1)
+        cash = await cashflow(session, member.household_id, january, this_month, now)
+    else:
+        cash = None
+    await edit_or_answer(
+        callback,
+        format_report(report, limits, cash, note_income_start=report_period is Period.YEAR),
+    )
     await callback.answer()

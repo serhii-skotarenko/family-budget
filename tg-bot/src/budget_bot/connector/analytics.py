@@ -17,6 +17,8 @@ from budget_bot.connector.inputs import MAX_TREND_BUCKETS, DateRange, InvalidReq
 from budget_bot.connector.schemas import (
     BreakdownItem,
     BudgetOverview,
+    CashflowMonth,
+    CashflowReport,
     CategoryInfo,
     CategorySpending,
     ExpenseItem,
@@ -37,6 +39,13 @@ from budget_bot.models import Category, Expense, Member
 from budget_bot.periods import kyiv_day_range, period_range, to_kyiv
 from budget_bot.services.access import SINGLETON_HOUSEHOLD_ID, list_members
 from budget_bot.services.categories import list_categories, normalize_category_name
+from budget_bot.services.income import (
+    income_at,
+    month_cashflow,
+    month_first,
+    month_range,
+    next_month,
+)
 from budget_bot.services.limits import LIMIT_PERIODS, limit_progress, period_days
 
 HOUSEHOLD_ID = SINGLETON_HOUSEHOLD_ID
@@ -92,6 +101,7 @@ async def budget_overview(session: AsyncSession, now_utc: datetime) -> BudgetOve
         first_expense_date=to_kyiv(first).date() if first is not None else None,
         last_expense_date=to_kyiv(last).date() if last is not None else None,
         expense_count=count,
+        current_monthly_income=await income_at(session, HOUSEHOLD_ID, now_utc),
     )
 
 
@@ -417,3 +427,36 @@ async def limit_progress_report(
             )
         )
     return LimitProgressReport(date=day, periods=periods)
+
+
+async def cashflow_report(
+    session: AsyncSession, date_range: DateRange, *, now_utc: datetime
+) -> CashflowReport:
+    """Income and free cashflow per whole calendar month overlapping the range."""
+    first = month_first(date_range.first)
+    last = min(month_first(date_range.last), month_first(to_kyiv(now_utc).date()))
+    count = (last.year - first.year) * 12 + last.month - first.month + 1
+    if count > MAX_TREND_BUCKETS:
+        raise InvalidRequest(
+            f"{date_range.first.isoformat()}..{date_range.last.isoformat()} gives {count} "
+            f"months (max {MAX_TREND_BUCKETS}); use a shorter date range"
+        )
+
+    months = []
+    month = first
+    while month <= last:
+        item = await month_cashflow(session, HOUSEHOLD_ID, month, now_utc)
+        bounds = month_range(month)
+        months.append(
+            CashflowMonth(
+                month_start=month,
+                month_end=to_kyiv(bounds.end).date() - timedelta(days=1),
+                income=item.income,
+                spent=item.spent,
+                one_time_amount=item.one_time,
+                free_cashflow=item.free,
+                complete=item.complete,
+            )
+        )
+        month = next_month(month)
+    return CashflowReport(start_date=date_range.first, end_date=date_range.last, months=months)

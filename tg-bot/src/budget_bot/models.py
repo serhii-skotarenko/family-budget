@@ -110,3 +110,21 @@ class Limit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     category: Mapped[Category | None] = relationship(lazy="selectin")
+
+
+class Income(Base):
+    """Monthly household income. Append-only: every change inserts a new row.
+
+    The income of a month is the latest row with ``effective_from`` at or
+    before the month's end (or now, for the current month).
+    """
+
+    __tablename__ = "incomes"
+    __table_args__ = (Index("ix_incomes_lookup", "household_id", "effective_from"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"))
+    amount: Mapped[int]
+    effective_from: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("members.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

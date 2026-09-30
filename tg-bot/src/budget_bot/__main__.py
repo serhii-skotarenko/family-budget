@@ -30,6 +30,7 @@ BOT_COMMANDS = [
     BotCommand(command="report", description="Звіт за період"),
     BotCommand(command="limits", description="Ліміти та прогрес"),
     BotCommand(command="setlimit", description="Встановити ліміт"),
+    BotCommand(command="setincome", description="Місячний дохід"),
     BotCommand(command="categories", description="Категорії"),
     BotCommand(command="cancel", description="Перервати діалог"),
 ]

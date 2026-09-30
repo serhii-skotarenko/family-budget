@@ -17,6 +17,7 @@ from budget_bot.periods import KYIV, Period
 from budget_bot.services.access import SINGLETON_HOUSEHOLD_ID
 from budget_bot.services.categories import ensure_default_categories, list_categories
 from budget_bot.services.expenses import create_expense
+from budget_bot.services.income import set_income
 from budget_bot.services.limits import set_limit
 
 
@@ -251,6 +252,20 @@ class BudgetWriter:
                 member_id=member_id,
                 period_type=Period(period),
                 category_id=category_id,
+                amount=amount,
+                now=at,
+            )
+            await db_session.commit()
+
+    async def set_income(self, *, amount: int, at: datetime) -> None:
+        async with self._factory() as db_session:
+            member_id = await db_session.scalar(
+                select(Member.id).where(Member.display_name == "Сергій")
+            )
+            await set_income(
+                db_session,
+                household_id=SINGLETON_HOUSEHOLD_ID,
+                member_id=member_id,
                 amount=amount,
                 now=at,
             )

@@ -1,7 +1,7 @@
 """Rendering of user-facing messages. Output is Telegram HTML."""
 
 from collections.abc import Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 from html import escape
 
 from budget_bot.amounts import format_amount
@@ -9,11 +9,13 @@ from budget_bot.models import Expense
 from budget_bot.periods import (
     LIMIT_PERIOD_TITLES,
     MONTHS_UK,
+    MONTHS_UK_GENITIVE,
     Period,
     format_date_short,
     format_datetime,
     to_kyiv,
 )
+from budget_bot.services.income import Cashflow
 from budget_bot.services.limits import LIMIT_PERIODS, WARN_PERCENT, LimitProgress, LimitStatus
 from budget_bot.services.reports import Report
 
@@ -79,7 +81,21 @@ def format_saved_expense(expense: Expense) -> str:
     return f"✅ Записано: {format_expense_line(expense)}"
 
 
-def format_report(report: Report, limits: Sequence[LimitProgress] = ()) -> str:
+def _cashflow_lines(cash: Cashflow, note_income_start: bool) -> list[str]:
+    free = cash.free
+    free_text = format_amount(free) if free >= 0 else f"−{format_amount(-free)} 🔴"
+    lines = [f"Дохід: {format_amount(cash.income)}", f"Вільний кешфлоу: {free_text}"]
+    if note_income_start and cash.first_month.month != 1:
+        lines.append(f"(дохід враховано з {MONTHS_UK_GENITIVE[cash.first_month.month - 1]})")
+    return lines
+
+
+def format_report(
+    report: Report,
+    limits: Sequence[LimitProgress] = (),
+    cashflow: Cashflow | None = None,
+    note_income_start: bool = False,
+) -> str:
     header = f"📊 <b>Звіт — {escape(report.period_label)}</b>"
     if report.total == 0:
         return f"{header}\n\nВитрат за цей період не знайдено."
@@ -91,6 +107,8 @@ def format_report(report: Report, limits: Sequence[LimitProgress] = ()) -> str:
     lines = [header, total_line]
     if None in limit_by_category:
         lines.append(_limit_usage_line(limit_by_category[None]))
+    if cashflow is not None:
+        lines.extend(_cashflow_lines(cashflow, note_income_start))
 
     lines.extend(["", "<b>За категоріями:</b>"])
     for item in report.by_category:
@@ -169,3 +187,11 @@ def format_limit_alert(progress: LimitProgress) -> str:
             f"перевищено на {format_amount(over)}" if over else "ліміт вичерпано"
         )
     return f"⚠️ {head}{progress.percent}%"
+
+
+def format_income_saved(amount: int, previous: int | None, now: datetime) -> str:
+    text = f"✅ Дохід: <b>{format_amount(amount)}</b>/міс"
+    if previous is not None:
+        text += f" (було {format_amount(previous)})"
+    local = to_kyiv(now)
+    return f"{text}, діє з {MONTHS_UK_GENITIVE[local.month - 1]} {local.year}"
