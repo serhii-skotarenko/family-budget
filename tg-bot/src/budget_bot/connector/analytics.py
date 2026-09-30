@@ -321,6 +321,7 @@ async def list_expenses(
     sort: SortOrder,
     limit: int,
     offset: int,
+    one_time: OneTimeFilter = "all",
 ) -> ExpensePage:
     query = (
         select(
@@ -328,12 +329,13 @@ async def list_expenses(
             Expense.created_at,
             Expense.amount,
             Expense.description,
+            Expense.is_one_time,
             Category.name.label("category"),
             Member.display_name.label("member"),
         )
         .join(Category, Category.id == Expense.category_id)
         .join(Member, Member.id == Expense.member_id)
-        .where(*_conditions(date_range, category, member))
+        .where(*_conditions(date_range, category, member, one_time))
     )
     if min_amount is not None:
         query = query.where(Expense.amount >= min_amount)
@@ -356,6 +358,7 @@ async def list_expenses(
                 category=row.category,
                 member=row.member,
                 description=row.description,
+                is_one_time=row.is_one_time,
             )
             for row in page
         ],

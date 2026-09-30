@@ -19,6 +19,7 @@ async def list_page(session_factory, **overrides) -> ExpensePage:
         "sort": "newest",
         "limit": 50,
         "offset": 0,
+        "one_time": "all",
     } | overrides
     date_range = arguments.pop("date_range")
     async with session_factory() as session:
@@ -53,6 +54,7 @@ async def test_items_carry_the_bot_id_kyiv_time_and_names(
             "category": "Їжа",
             "member": "Оля",
             "description": "Сільпо",
+            "is_one_time": False,
         }
     ]
 
@@ -90,3 +92,28 @@ async def test_total_count_is_taken_after_search(early_september, readonly_sessi
     # "к" occurs in "кава", "Таксі додому" and "Кіно"; expense 5 has no description.
     page = await list_page(readonly_session_factory, search="к", limit=1)
     assert (len(page.items), page.total_count, page.next_offset) == (1, 3, 1)
+
+
+async def test_items_flag_one_time(september_one_time, readonly_session_factory):
+    page = await list_page(readonly_session_factory, sort="largest")
+
+    assert [(item.amount, item.is_one_time) for item in page.items] == [
+        (5000, True),
+        (1200, False),
+        (600, False),
+        (350, False),
+        (300, True),
+        (250, False),
+        (100, False),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("one_time", "amounts"),
+    [("only", [300, 5000]), ("exclude", [600, 1200, 100, 250, 350])],
+)
+async def test_one_time_filter(september_one_time, readonly_session_factory, one_time, amounts):
+    page = await list_page(readonly_session_factory, one_time=one_time)
+
+    assert [item.amount for item in page.items] == amounts
+    assert page.total_count == len(amounts)

@@ -162,3 +162,13 @@ async def test_summarize_accepts_one_time_filter(september_one_time, readonly_se
     assert result.is_error is False
     assert result.structured_content["total"] == 1550
     assert result.structured_content["one_time"] == "exclude"
+
+
+async def test_list_expenses_accepts_one_time_filter(september_one_time, readonly_session_factory):
+    result = await call(
+        readonly_session_factory, "list_expenses", {**SEPTEMBER, "one_time": "only"}
+    )
+
+    assert result.is_error is False
+    items = result.structured_content["items"]
+    assert [(item["amount"], item["is_one_time"]) for item in items] == [(300, True), (5000, True)]

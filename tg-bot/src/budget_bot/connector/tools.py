@@ -84,7 +84,8 @@ LIST_DESCRIPTION = (
     "time: id (the number the bot shows as «Витрата #N»), date and time in Kyiv, amount in "
     "whole UAH, category, the member who recorded it and the description. Filters: category, "
     "member, a case-insensitive text in the description, a minimum amount. Sorted newest "
-    "first, oldest first or largest first."
+    "first, oldest first or largest first. Each item says whether it is marked one-time in "
+    "the bot."
 )
 
 
@@ -185,6 +186,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
         min_amount: Annotated[
             int | None, Field(description="Only expenses of at least this many UAH")
         ] = None,
+        one_time: OneTimeArg = "all",
         sort: Annotated[
             SortOrder, Field(description="newest first, oldest first or largest amount first")
         ] = "newest",
@@ -208,6 +210,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
                 sort=sort,
                 limit=limit,
                 offset=offset,
+                one_time=one_time,
             )
 
         return await _run("list_expenses", ctx, session_factory, work)

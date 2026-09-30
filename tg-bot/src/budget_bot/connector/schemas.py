@@ -96,6 +96,7 @@ class ExpenseItem(BaseModel):
     category: str
     member: str = Field(description="Who recorded the expense")
     description: str | None
+    is_one_time: bool = Field(False, description="True when marked one-time (разова) in the bot")
 
 
 class ExpensePage(BaseModel):
