@@ -1,4 +1,4 @@
-"""/add: amount → category → optional description → confirmation."""
+"""/add: amount → category → optional description → confirmation (with one-time toggle)."""
 
 from html import escape
 
@@ -21,10 +21,12 @@ from budget_bot.bot.keyboards import (
 from budget_bot.bot.predicates import NOT_A_COMMAND
 from budget_bot.bot.replies import edit_or_answer
 from budget_bot.bot.texts import MAX_DESCRIPTION_LENGTH
-from budget_bot.formatting import format_saved_expense
+from budget_bot.clock import utcnow
+from budget_bot.formatting import format_limit_alert, format_saved_expense
 from budget_bot.models import Member
 from budget_bot.services.categories import get_category, list_categories
-from budget_bot.services.expenses import create_expense
+from budget_bot.services.expenses import create_expense, is_anomalous, typical_amount
+from budget_bot.services.limits import WARN_PERCENT, progress_for_expense
 
 router = Router(name="add_expense")
 
@@ -75,7 +77,11 @@ async def pick_category(
         await callback.answer("Категорію не знайдено. Оберіть іншу.", show_alert=True)
         return
 
-    await state.update_data(category_id=category.id, category_name=category.name)
+    await state.update_data(
+        category_id=category.id,
+        category_name=category.name,
+        typical=await typical_amount(session, member.household_id, category.id),
+    )
     await state.set_state(AddExpense.description)
     await callback.message.answer(
         f"Категорія: <b>{escape(category.name)}</b>\n\nДодайте опис або пропустіть цей крок:",
@@ -96,16 +102,39 @@ async def skip_description(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+def _confirmation_text(data: dict) -> str:
+    lines = []
+    if is_anomalous(data["amount"], data.get("typical")):
+        lines += [
+            f"⚠️ Сума значно більша за типову для «{escape(data['category_name'])}» "
+            f"(звичайно ~{format_amount(data['typical'])}). Все вірно? "
+            "Якщо це одноразова подія — позначте її.",
+            "",
+        ]
+    description = data.get("description")
+    lines += [
+        "Перевірте запис:",
+        f"Сума: <b>{format_amount(data['amount'])}</b>",
+        f"Категорія: {escape(data['category_name'])}",
+        f"Опис: {escape(description) if description else '—'}",
+    ]
+    return "\n".join(lines)
+
+
 async def _ask_confirmation(message: Message, state: FSMContext, description: str | None) -> None:
-    data = await state.update_data(description=description)
+    data = await state.update_data(description=description, is_one_time=False)
     await state.set_state(AddExpense.confirm)
-    summary = (
-        "Перевірте запис:\n"
-        f"Сума: <b>{format_amount(data['amount'])}</b>\n"
-        f"Категорія: {escape(data['category_name'])}\n"
-        f"Опис: {escape(description) if description else '—'}"
+    await message.answer(_confirmation_text(data), reply_markup=confirm_keyboard())
+
+
+@router.callback_query(AddExpense.confirm, FlowCb.filter(F.action == "toggle_one_time"))
+async def toggle_one_time(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    data = await state.update_data(is_one_time=not data.get("is_one_time", False))
+    await edit_or_answer(
+        callback, _confirmation_text(data), reply_markup=confirm_keyboard(data["is_one_time"])
     )
-    await message.answer(summary, reply_markup=confirm_keyboard())
+    await callback.answer()
 
 
 @router.callback_query(AddExpense.confirm, FlowCb.filter(F.action == "save"))
@@ -134,6 +163,15 @@ async def save_expense(
         category_id=data["category_id"],
         amount=data["amount"],
         description=data.get("description"),
+        is_one_time=data.get("is_one_time", False),
     )
-    await edit_or_answer(callback, format_saved_expense(expense))
+    alerts = [
+        format_limit_alert(item)
+        for item in await progress_for_expense(session, expense, utcnow())
+        if item.percent >= WARN_PERCENT
+    ]
+    text = format_saved_expense(expense)
+    if alerts:
+        text += "\n\n" + "\n".join(alerts)
+    await edit_or_answer(callback, text)
     await callback.answer()

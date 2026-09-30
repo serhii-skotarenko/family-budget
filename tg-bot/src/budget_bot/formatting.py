@@ -34,6 +34,8 @@ def format_expense_line(expense: Expense, index: int | None = None) -> str:
         escape(expense.category.name),
         escape(expense.author.display_name),
     ]
+    if expense.is_one_time:
+        parts.append("разова")
     line = " · ".join(parts)
     if expense.description:
         line += f" — {escape(expense.description)}"
@@ -152,3 +154,16 @@ def format_limits(progress: Sequence[LimitProgress]) -> str:
         lines.extend(["", _limits_section_title(items[0])])
         lines.extend(_limit_line(item) for item in items)
     return "\n".join(lines)
+
+
+def format_limit_alert(progress: LimitProgress) -> str:
+    head = (
+        f"{escape(progress.name)} ({LIMIT_PERIOD_TITLES[progress.period_type]}): "
+        f"{format_amount(progress.spent)} / {format_amount(progress.amount)} — "
+    )
+    if progress.status is LimitStatus.OVER:
+        over = progress.spent - progress.amount
+        return f"🔴 {head}" + (
+            f"перевищено на {format_amount(over)}" if over else "ліміт вичерпано"
+        )
+    return f"⚠️ {head}{progress.percent}%"

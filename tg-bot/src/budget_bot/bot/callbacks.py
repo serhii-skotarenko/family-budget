@@ -28,7 +28,7 @@ class FilterCb(CallbackData, prefix="flt"):
 
 
 class FlowCb(CallbackData, prefix="flow"):
-    action: str  # "cancel" | "skip" | "save" | "add_category"
+    action: str  # "cancel" | "skip" | "save" | "add_category" | "toggle_one_time"
 
 
 class LimitCb(CallbackData, prefix="lim"):

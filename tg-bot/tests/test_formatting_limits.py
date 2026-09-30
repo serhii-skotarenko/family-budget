@@ -1,4 +1,4 @@
-from budget_bot.formatting import EMPTY_LIMITS_TEXT, format_limits
+from budget_bot.formatting import EMPTY_LIMITS_TEXT, format_limit_alert, format_limits
 from budget_bot.periods import Period, period_range
 from budget_bot.services.limits import LimitProgress, period_days
 from tests.conftest import kyiv
@@ -57,3 +57,15 @@ def test_zero_spending():
     text = format_limits([progress(Period.MONTH, None, None, 1000, 0)])
 
     assert "0 ₴ / 1 000 ₴ — 0%, лишилось 1 000 ₴\n  прогноз: 0 ₴" in text
+
+
+def test_limit_alerts():
+    warn = progress(Period.MONTH, 1, "<i>Їжа</i>", 12000, 9800)
+    over = progress(Period.WEEK, None, None, 10000, 10400)
+
+    assert format_limit_alert(warn) == (
+        "⚠️ &lt;i&gt;Їжа&lt;/i&gt; (місяць): 9 800 ₴ / 12 000 ₴ — 81%"
+    )
+    assert format_limit_alert(over) == (
+        "🔴 Загальний (тиждень): 10 400 ₴ / 10 000 ₴ — перевищено на 400 ₴"
+    )

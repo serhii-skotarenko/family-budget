@@ -69,11 +69,15 @@ def description_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def confirm_keyboard() -> InlineKeyboardMarkup:
+def confirm_keyboard(is_one_time: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.button(
+        text=f"{'☑' if is_one_time else '☐'} Разова",
+        callback_data=FlowCb(action="toggle_one_time"),
+    )
     builder.button(text="✅ Зберегти", callback_data=FlowCb(action="save"))
     builder.button(text="❌ Скасувати", callback_data=FlowCb(action="cancel"))
-    builder.adjust(2)
+    builder.adjust(1, 2)
     return builder.as_markup()
 
 

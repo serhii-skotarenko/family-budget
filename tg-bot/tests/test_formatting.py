@@ -179,3 +179,17 @@ def test_report_shows_one_time_and_limit_lines():
     assert "  з них разових: 16 962 ₴" in text
     assert "  ліміт 4 000 ₴ — використано 73%" in text  # 2959*100//4000 = 73
     assert text.count("ліміт") == 2  # Їжа has no limit
+
+
+async def test_expense_line_marks_one_time(session, household, member, category):
+    expense = await create_expense(
+        session,
+        household_id=household.id,
+        member_id=member.id,
+        category_id=category.id,
+        amount=250,
+        is_one_time=True,
+        created_at=datetime(2026, 9, 7, 9, 0),
+    )
+
+    assert format_expense_line(expense) == "07.09 · 250 ₴ · Їжа · Сергій · разова"
