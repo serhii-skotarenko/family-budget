@@ -258,3 +258,10 @@ async def cb_delete_limit(
     text, keyboard = await _render_limits(session, member.household_id)
     await edit_or_answer(callback, f"🗑 Ліміт знято.\n\n{text}", reply_markup=keyboard)
     await callback.answer()
+
+
+@router.callback_query(LimitCb.filter(F.action == "delete_no"))
+async def cb_keep_limit(callback: CallbackQuery, callback_data: LimitCb, state: FSMContext) -> None:
+    """Decline the removal without touching the FSM state of any other dialog."""
+    await edit_or_answer(callback, "Ліміт залишено без змін.")
+    await callback.answer()

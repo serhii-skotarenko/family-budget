@@ -1,9 +1,11 @@
 from budget_bot.bot.callbacks import LimitCb
+from budget_bot.bot.handlers.add_expense import AddExpense
 from budget_bot.bot.handlers.limits import (
     SetLimit,
     cb_ask_delete_limit,
     cb_delete_limit,
     cb_edit_limit,
+    cb_keep_limit,
     cmd_limits,
     cmd_setlimit,
     enter_limit_amount,
@@ -266,3 +268,28 @@ async def test_edit_of_removed_limit_is_stale(session, member, category, state):
 
     assert callback.answers[-1] == ("Ліміт уже знято.", True)
     assert await state.get_state() is None
+
+
+async def test_declining_removal_keeps_an_unrelated_dialog(session, member, category, state):
+    await _set(session, member, Period.MONTH, category.id, 12000)
+    ask = FakeCallback()
+    await cb_ask_delete_limit(
+        ask,
+        callback_data=LimitCb(action="delete", period_type="month", category_id=category.id),
+        state=state,
+        session=session,
+        member=member,
+    )
+    no_button = buttons(ask.message.replies[-1][1]).index("↩️ Ні")
+    no_data = ask.message.replies[-1][1]["reply_markup"].inline_keyboard[0][no_button].callback_data
+    # Meanwhile the user started /add and is mid-dialog.
+    await state.set_state(AddExpense.category)
+    await state.update_data(amount=250)
+    decline = FakeCallback()
+
+    await cb_keep_limit(decline, callback_data=LimitCb.unpack(no_data), state=state)
+
+    assert await state.get_state() == AddExpense.category
+    assert (await state.get_data())["amount"] == 250
+    assert decline.message.last_edit == "Ліміт залишено без змін."
+    assert await get_active_limit(session, member.household_id, Period.MONTH, category.id, utcnow())

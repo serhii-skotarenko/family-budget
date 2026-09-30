@@ -230,6 +230,13 @@ def limit_delete_confirm_keyboard(period_type: Period, category_id: int) -> Inli
             action="delete_yes", period_type=period_type.value, category_id=category_id
         ),
     )
-    builder.button(text="↩️ Ні", callback_data=FlowCb(action="cancel"))
+    # Not FlowCb(action="cancel"): that one clears the FSM state, which would
+    # silently drop a dialog started after this prompt was shown.
+    builder.button(
+        text="↩️ Ні",
+        callback_data=LimitCb(
+            action="delete_no", period_type=period_type.value, category_id=category_id
+        ),
+    )
     builder.adjust(2)
     return builder.as_markup()
