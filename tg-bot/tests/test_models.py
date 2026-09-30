@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from budget_bot.clock import utcnow
-from budget_bot.models import Category, Expense, Household, Limit, Member
+from budget_bot.models import Category, Expense, Household, Income, Limit, Member
 
 
 async def test_expense_relationships_load_without_lazy_io(session):
@@ -107,3 +107,19 @@ async def test_expense_is_regular_by_default(session, household, member, categor
     await session.refresh(expense)
 
     assert expense.is_one_time is False
+
+
+async def test_income_persists(session, household, member):
+    session.add(
+        Income(
+            household_id=household.id,
+            amount=300000,
+            effective_from=utcnow(),
+            created_by_id=member.id,
+        )
+    )
+    await session.commit()
+
+    (row,) = list(await session.scalars(select(Income)))
+    assert row.amount == 300000
+    assert row.created_at is not None

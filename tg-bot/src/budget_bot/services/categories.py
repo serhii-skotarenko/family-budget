@@ -10,6 +10,7 @@ DEFAULT_CATEGORIES: tuple[str, ...] = (
     "Їжа",
     "Транспорт",
     "Комунальні",
+    "Зв'язок",
     "Оренда житла",
     "Розваги",
     "Здоров'я",
@@ -43,7 +44,7 @@ def normalize_category_name(name: str) -> str:
 
 
 async def ensure_default_categories(session: AsyncSession, household_id: int) -> None:
-    """Seed the nine default categories, but only if the household has none yet."""
+    """Seed the default categories, but only if the household has none yet."""
     existing = await session.scalar(
         select(func.count()).select_from(Category).where(Category.household_id == household_id)
     )
