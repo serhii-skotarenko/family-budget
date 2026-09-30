@@ -178,7 +178,7 @@ def kyiv(year: int, month: int, day: int, hour: int = 12, minute: int = 0) -> da
 @pytest_asyncio.fixture
 async def budget_db(tmp_path) -> Path:
     """A real SQLite file shaped like production: the singleton household,
-    members Сергій and Оля, and the default categories. No expenses."""
+    members Сергій and Оля, and the nine default categories. No expenses."""
     path = tmp_path / "budget.sqlite3"
     engine = create_engine(f"sqlite+aiosqlite:///{path}")
     async with engine.begin() as connection:

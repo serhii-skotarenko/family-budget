@@ -19,7 +19,6 @@ EXPECTED_DEFAULT_CATEGORIES = (
     "Їжа",
     "Транспорт",
     "Комунальні",
-    "Зв'язок",
     "Оренда житла",
     "Розваги",
     "Здоров'я",
@@ -29,19 +28,19 @@ EXPECTED_DEFAULT_CATEGORIES = (
 )
 
 
-async def test_seeds_default_categories_in_canonical_order(session, household):
+async def test_seeds_nine_default_categories_in_canonical_order(session, household):
     await ensure_default_categories(session, household.id)
 
     names = [category.name for category in await list_categories(session, household.id)]
     assert names == list(EXPECTED_DEFAULT_CATEGORIES)
-    assert len(names) == 10
+    assert len(names) == 9
 
 
 async def test_seeding_is_idempotent(session, household):
     await ensure_default_categories(session, household.id)
     await ensure_default_categories(session, household.id)
 
-    assert len(await list_categories(session, household.id)) == 10
+    assert len(await list_categories(session, household.id)) == 9
 
 
 async def test_custom_categories_come_after_defaults(session, household):

@@ -42,7 +42,7 @@ async def test_duplicate_is_rejected_with_explanation_and_state_kept(
 
     assert "вже існує" in message.last_reply
     assert await state.get_state() == AddCategory.name
-    assert len(await list_categories(session, member.household_id)) == 10
+    assert len(await list_categories(session, member.household_id)) == 9
 
 
 async def test_empty_name_is_rejected(session, member, category, state):
