@@ -4,6 +4,7 @@ from budget_bot.formatting import (
     format_expense_card,
     format_expense_line,
     format_expense_list,
+    format_income_saved,
     format_report,
     format_saved_expense,
 )
@@ -193,3 +194,9 @@ async def test_expense_line_marks_one_time(session, household, member, category)
     )
 
     assert format_expense_line(expense) == "07.09 · 250 ₴ · Їжа · Сергій · разова"
+
+
+def test_income_saved_names_the_month_in_genitive():
+    text = format_income_saved(312000, 300000, kyiv(2026, 10, 15))
+
+    assert text == ("✅ Дохід: <b>312 000 ₴</b>/міс (було 300 000 ₴), діє з жовтня 2026")
