@@ -1,14 +1,18 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from budget_bot.clock import utcnow
 from budget_bot.periods import Period, period_range
+from budget_bot.services.categories import add_category
 from budget_bot.services.expenses import (
     UNSET,
     ExpenseFilters,
     create_expense,
     delete_expense,
     get_expense,
+    is_anomalous,
     list_expenses,
+    set_one_time,
+    typical_amount,
     update_expense,
 )
 
@@ -155,3 +159,71 @@ async def test_delete_removes_expense_from_listings(session, household, member, 
 
     assert await get_expense(session, household.id, expense.id) is None
     assert await list_expenses(session, household.id) == []
+
+
+async def _spend(session, household, member, category, amount, *, one_time=False, minutes_ago=0):
+    return await create_expense(
+        session,
+        household_id=household.id,
+        member_id=member.id,
+        category_id=category.id,
+        amount=amount,
+        is_one_time=one_time,
+        created_at=utcnow() - timedelta(minutes=minutes_ago),
+    )
+
+
+async def test_create_expense_stores_one_time_flag(session, household, member, category):
+    expense = await _spend(session, household, member, category, 100, one_time=True)
+
+    assert expense.is_one_time is True
+
+
+async def test_set_one_time_records_the_editor(session, household, member, partner, category):
+    expense = await _spend(session, household, member, category, 100)
+
+    updated = await set_one_time(session, expense, editor_id=partner.id, value=True)
+
+    assert updated.is_one_time is True
+    assert updated.updated_by_id == partner.id
+    assert updated.updated_at is not None
+    assert updated.member_id == member.id
+
+
+async def test_typical_amount_needs_at_least_five_regular_expenses(
+    session, household, member, category
+):
+    for amount in (100, 200, 300, 400):
+        await _spend(session, household, member, category, amount)
+    await _spend(session, household, member, category, 5000, one_time=True)
+
+    assert await typical_amount(session, household.id, category.id) is None
+
+
+async def test_typical_amount_is_the_median_of_regular_expenses(
+    session, household, member, category
+):
+    for amount in (100, 200, 300, 400, 500, 600):
+        await _spend(session, household, member, category, amount)
+    await _spend(session, household, member, category, 90000, one_time=True)
+    other = await add_category(session, household.id, "Кава")
+    await _spend(session, household, member, other, 90000)
+
+    # median(100..600) = (300 + 400) / 2 = 350; the one-time and the other
+    # category are ignored.
+    assert await typical_amount(session, household.id, category.id) == 350
+
+
+async def test_typical_amount_uses_only_the_latest_twenty(session, household, member, category):
+    for _ in range(20):
+        await _spend(session, household, member, category, 100, minutes_ago=0)
+    for _ in range(10):
+        await _spend(session, household, member, category, 9000, minutes_ago=60)
+
+    assert await typical_amount(session, household.id, category.id) == 100
+
+
+def test_is_anomalous_threshold():
+    assert is_anomalous(901, 300) is True
+    assert is_anomalous(900, 300) is False
+    assert is_anomalous(10_000, None) is False
