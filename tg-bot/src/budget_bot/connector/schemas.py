@@ -65,6 +65,7 @@ class BreakdownItem(BaseModel):
     name: str
     amount: int
     count: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
 
 
 class TrendBucket(BaseModel):
@@ -73,6 +74,7 @@ class TrendBucket(BaseModel):
     partial: bool = Field(description="True when the date range cuts this week or month short")
     total: int
     count: int
+    one_time_amount: int = Field(0, description=ONE_TIME_AMOUNT)
     breakdown: list[BreakdownItem] | None
 
 
@@ -83,6 +85,7 @@ class SpendingTrend(BaseModel):
     split_by: SplitBy
     category: str | None
     member: str | None
+    one_time: OneTimeFilter = "all"
     buckets: list[TrendBucket]
 
 

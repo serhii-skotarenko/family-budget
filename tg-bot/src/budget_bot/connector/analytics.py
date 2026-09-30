@@ -214,29 +214,41 @@ async def spending_trend(
     split_by: SplitBy,
     category: Category | None,
     member: Member | None,
+    one_time: OneTimeFilter = "all",
 ) -> SpendingTrend:
     spans = trend_buckets(date_range, granularity)
     rows = (
         await session.execute(
-            select(Expense.created_at, Expense.amount, Category.name, Member.display_name)
+            select(
+                Expense.created_at,
+                Expense.amount,
+                Expense.is_one_time,
+                Category.name,
+                Member.display_name,
+            )
             .join(Category, Category.id == Expense.category_id)
             .join(Member, Member.id == Expense.member_id)
-            .where(*_conditions(date_range, category, member))
+            .where(*_conditions(date_range, category, member, one_time))
         )
     ).all()
 
     starts = [span.first for span in spans]
     totals = [0] * len(spans)
     counts = [0] * len(spans)
-    groups: list[defaultdict[str, list[int]]] = [defaultdict(lambda: [0, 0]) for _ in spans]
-    for created_at, amount, category_name, member_name in rows:
+    one_time_parts = [0] * len(spans)
+    # name -> [amount, count, one-time amount]
+    groups: list[defaultdict[str, list[int]]] = [defaultdict(lambda: [0, 0, 0]) for _ in spans]
+    for created_at, amount, is_one_time, category_name, member_name in rows:
         index = bisect_right(starts, to_kyiv(created_at).date()) - 1
+        part = amount if is_one_time else 0
         totals[index] += amount
         counts[index] += 1
+        one_time_parts[index] += part
         if split_by != "none":
             entry = groups[index][category_name if split_by == "category" else member_name]
             entry[0] += amount
             entry[1] += 1
+            entry[2] += part
 
     return SpendingTrend(
         start_date=date_range.first,
@@ -245,6 +257,7 @@ async def spending_trend(
         split_by=split_by,
         category=category.name if category is not None else None,
         member=member.display_name if member is not None else None,
+        one_time=one_time,
         buckets=[
             TrendBucket(
                 start_date=span.first,
@@ -252,6 +265,7 @@ async def spending_trend(
                 partial=span.partial,
                 total=totals[index],
                 count=counts[index],
+                one_time_amount=one_time_parts[index],
                 breakdown=None if split_by == "none" else _breakdown(groups[index]),
             )
             for index, span in enumerate(spans)
@@ -283,7 +297,10 @@ def _bucket_count(date_range: DateRange, granularity: Granularity) -> int:
 
 def _breakdown(group: dict[str, list[int]]) -> list[BreakdownItem]:
     ordered = sorted(group.items(), key=lambda item: (-item[1][0], item[0]))
-    return [BreakdownItem(name=name, amount=amount, count=n) for name, (amount, n) in ordered]
+    return [
+        BreakdownItem(name=name, amount=amount, count=n, one_time_amount=part)
+        for name, (amount, n, part) in ordered
+    ]
 
 
 _SORTS = {

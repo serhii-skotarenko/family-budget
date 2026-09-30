@@ -76,7 +76,8 @@ TREND_DESCRIPTION = (
     "Returns spending in whole UAH per calendar week (Monday to Sunday) or per calendar "
     "month, in Kyiv time, across an inclusive date range, optionally split by category or "
     "by member. Weeks or months cut short by the range are marked partial. At most 60 "
-    "buckets per call."
+    "buckets per call. Each bucket and breakdown row also carries one_time_amount, the part "
+    "marked one-time in the bot."
 )
 LIST_DESCRIPTION = (
     "Returns individual expenses for an inclusive range of Kyiv calendar days, one page at a "
@@ -150,6 +151,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
         ] = "none",
         category: CategoryName = None,
         member: MemberName = None,
+        one_time: OneTimeArg = "all",
     ) -> SpendingTrend:
         async def work(session: AsyncSession) -> SpendingTrend:
             date_range = parse_date_range(start_date, end_date)
@@ -160,6 +162,7 @@ def build_mcp_server(session_factory: SessionFactory) -> MCPServer:
                 split_by=split_by,
                 category=await analytics.find_category(session, category),
                 member=await analytics.find_member(session, member),
+                one_time=one_time,
             )
 
         return await _run("get_spending_trend", ctx, session_factory, work)
