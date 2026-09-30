@@ -4,6 +4,7 @@ from budget_bot.clock import utcnow
 from budget_bot.periods import Period
 from budget_bot.services.categories import add_category
 from budget_bot.services.expenses import create_expense
+from budget_bot.services.income import set_income
 from budget_bot.services.limits import set_limit
 from tests.conftest import FakeCallback, FakeMessage
 
@@ -92,3 +93,37 @@ async def test_year_report_has_no_limit_lines(session, household, member, catego
     await cb_report(callback, callback_data=ReportCb(period="year"), session=session, member=member)
 
     assert "ліміт" not in callback.message.last_edit
+
+
+async def test_month_report_with_income(session, household, member, category):
+    await make(session, household, member, category, 600)
+    await set_income(session, household_id=household.id, member_id=member.id, amount=300000)
+    callback = FakeCallback()
+
+    await cb_report(
+        callback, callback_data=ReportCb(period="month"), session=session, member=member
+    )
+
+    text = callback.message.last_edit
+    assert "Дохід: 300 000 ₴" in text
+    assert "Вільний кешфлоу: 299 400 ₴" in text
+
+
+async def test_year_report_with_income(session, household, member, category):
+    await make(session, household, member, category, 600)
+    await set_income(session, household_id=household.id, member_id=member.id, amount=300000)
+    callback = FakeCallback()
+
+    await cb_report(callback, callback_data=ReportCb(period="year"), session=session, member=member)
+
+    assert "Вільний кешфлоу: 299 400 ₴" in callback.message.last_edit
+
+
+async def test_week_report_has_no_income(session, household, member, category):
+    await make(session, household, member, category, 600)
+    await set_income(session, household_id=household.id, member_id=member.id, amount=300000)
+    callback = FakeCallback()
+
+    await cb_report(callback, callback_data=ReportCb(period="week"), session=session, member=member)
+
+    assert "Дохід" not in callback.message.last_edit

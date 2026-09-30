@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from budget_bot.formatting import (
     format_expense_card,
@@ -10,6 +10,7 @@ from budget_bot.formatting import (
 )
 from budget_bot.periods import Period, period_range
 from budget_bot.services.expenses import create_expense, update_expense
+from budget_bot.services.income import Cashflow
 from budget_bot.services.limits import LimitProgress
 from budget_bot.services.reports import CategoryTotal, MemberTotal, Report
 from tests.conftest import kyiv
@@ -200,3 +201,44 @@ def test_income_saved_names_the_month_in_genitive():
     text = format_income_saved(312000, 300000, kyiv(2026, 10, 15))
 
     assert text == ("✅ Дохід: <b>312 000 ₴</b>/міс (було 300 000 ₴), діє з жовтня 2026")
+
+
+def _month_report(total):
+    return Report(
+        period_label="поточний місяць (жовтень 2026)",
+        total=total,
+        by_category=[CategoryTotal("Їжа", total, 100.0, category_id=1)],
+        by_member=[MemberTotal("Сергій", total)],
+    )
+
+
+def test_report_shows_income_and_free_cashflow():
+    cash = Cashflow(income=300000, spent=58400, first_month=date(2026, 10, 1), months=1)
+
+    text = format_report(_month_report(58400), cashflow=cash)
+
+    assert "Дохід: 300 000 ₴\nВільний кешфлоу: 241 600 ₴" in text
+    assert text.index("Разом") < text.index("Дохід") < text.index("За категоріями")
+
+
+def test_negative_cashflow_is_marked():
+    cash = Cashflow(income=100, spent=600, first_month=date(2026, 10, 1), months=1)
+
+    text = format_report(_month_report(600), cashflow=cash)
+
+    assert "Вільний кешфлоу: −500 ₴ 🔴" in text
+
+
+def test_year_report_notes_when_income_starts():
+    cash = Cashflow(income=612000, spent=5000, first_month=date(2026, 9, 1), months=2)
+
+    noted = format_report(_month_report(5000), cashflow=cash, note_income_start=True)
+    january = Cashflow(income=10, spent=5, first_month=date(2026, 1, 1), months=10)
+    plain = format_report(_month_report(5), cashflow=january, note_income_start=True)
+
+    assert "(дохід враховано з вересня)" in noted
+    assert "враховано" not in plain
+
+
+def test_report_without_income_has_no_cashflow_lines():
+    assert "Дохід" not in format_report(_month_report(100))
