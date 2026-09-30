@@ -3,6 +3,12 @@
 **Дата:** 2026-09-15 · **Статус:** дизайн затверджено в брейнштормінгу, специфікація чекає на рев'ю ·
 **Гілка:** `feat/claude-mcp-connector`
 
+> **Оновлення 2026-09-30 (Phase 2, підпроєкт C, гілка `feat/phase2-connector-limits`).** Після
+> підпроєкту A (`2026-09-30-phase2-a-limits-one-time-design.md`) у даних з'явились ліміти й
+> позначка «разова». Конектор отримує п'ятий інструмент `get_limit_progress` і аргумент / поля
+> для разових витрат у наявних трьох. Нові місця позначені «(Phase 2 C)». Усе інше в цьому
+> документі — без змін: лише читання, та сама автентифікація, той самий read-only engine.
+
 ## Мета
 
 Дати Claude доступ на читання до витрат із бота, щоб у звичайному чаті розбиратися з фінансами:
@@ -10,7 +16,8 @@
 Claude Desktop, мобільний застосунок Claude і Claude Code.
 
 Це розширення поза межами MVP з `docs/requirements.md`. Поведінка бота і схема БД не змінюються,
-міграцій немає.
+міграцій немає (Phase 2 C теж без міграцій: читає таблицю `limits` і `expenses.is_one_time`,
+додані в підпроєкті A).
 
 ## Ухвалені рішення
 
@@ -21,7 +28,7 @@ Claude Desktop, мобільний застосунок Claude і Claude Code.
 | Дані | лише витрати з бота: учасники, категорії, записи |
 | Доступ | тільки читання |
 | Авторизація | статичний заголовок `Authorization: Bearer <токен>`, окремий токен на людину |
-| Форма API | аналітика на сервері + сторінкові деталі, 4 інструменти |
+| Форма API | аналітика на сервері + сторінкові деталі, 5 інструментів (п'ятий — Phase 2 C) |
 | Розміщення | той самий процес і контейнер Railway, що й бот |
 
 ## Свідомо не включено
@@ -30,7 +37,8 @@ Claude Desktop, мобільний застосунок Claude і Claude Code.
 - Rate limiting.
 - Окремий Railway-сервіс: том монтується лише в один сервіс.
 - Запис, редагування чи видалення через MCP.
-- Доходи, бюджети, ліміти — їх немає в даних.
+- Доходи — їх немає в даних. (Ліміти й разові витрати додано в Phase 2 C.)
+- Запис лімітів через MCP (встановлення / зняття — лише в боті).
 - Відносні періоди («цього місяця»), окремий інструмент «топ витрат», порівняння періодів.
 - MCP resources і prompts.
 - SSE-стріми та stateful-сесії.
@@ -56,8 +64,9 @@ Railway, один контейнер
 | Модуль | Відповідальність | Залежить від |
 |---|---|---|
 | `budget_bot/connector/schemas.py` | Pydantic-моделі відповідей інструментів — публічний контракт API | — |
-| `budget_bot/connector/analytics.py` | Запити й агрегація для огляду, підсумку, тренду і списку. Приймає `AsyncSession` і провалідовані значення, повертає моделі зі `schemas.py`, на некоректний запит кидає `InvalidRequest` | `models`, `periods`, `services` |
-| `budget_bot/connector/tools.py` | `build_mcp_server(session_factory) -> MCPServer`: реєстрація 4 інструментів (назва, `title`, опис, анотації), розбір аргументів, мапінг помилок, лог виклику | `analytics`, SDK |
+| `budget_bot/connector/analytics.py` | Запити й агрегація для огляду, підсумку, тренду, списку і (Phase 2 C) прогресу лімітів. Приймає `AsyncSession` і провалідовані значення, повертає моделі зі `schemas.py`, на некоректний запит кидає `InvalidRequest` | `models`, `periods`, `services` |
+| `budget_bot/connector/tools.py` | `build_mcp_server(session_factory) -> MCPServer`: реєстрація 5 інструментів (назва, `title`, опис, анотації), розбір аргументів, мапінг помилок, лог виклику | `analytics`, SDK |
+| `budget_bot/services/limits.py` (Phase 2 C) | Без змін; `limit_progress` викликається з `analytics` для обчислення прогресу — ті самі цифри, що в `/limits` | — |
 | `budget_bot/connector/auth.py` | Розбір `MCP_ACCESS_TOKENS`; ASGI-middleware `BearerGate` | — |
 | `budget_bot/connector/server.py` | Збирає ASGI-застосунок (`BearerGate` поверх Starlette-застосунку SDK), `uvicorn.Server` без перехоплення сигналів і `serve_connector()`, яка не випускає збій назовні | `auth`, `tools` |
 | `budget_bot/db.py` | + `create_readonly_engine(database_path)` | — |
@@ -157,6 +166,12 @@ Railway, один контейнер
   тоді Claude викликає його без підтвердження. Повертає Pydantic-модель.
 - **Розбивки** сортуються за сумою за спаданням, при рівності — за назвою. Категорії й учасники
   без витрат у розбивки не потрапляють.
+- **Разові витрати (Phase 2 C).** `summarize_spending`, `get_spending_trend` і `list_expenses`
+  приймають `one_time: "all" | "exclude" | "only"` (за замовчуванням `"all"` — суми такі самі,
+  як до Phase 2). Фільтр — у спільних SQL-умовах разом із датою, категорією й учасником. Поле
+  `one_time_amount` — частина `amount` / `total` цього рядка, позначена в боті як «разова»; при
+  `one_time: "exclude"` воно завжди 0, при `"only"` дорівнює сумі. Нові поля лише додаються,
+  наявні не змінюють значення.
 
 ### `get_budget_overview` — «Огляд бюджету»
 
@@ -181,6 +196,9 @@ Railway, один контейнер
 Вихід: `start_date`, `end_date`, `category` і `member` (канонічні назви з БД або `null`),
 `total`, `expense_count`, `by_category: [{name, amount, share_percent, count}]`,
 `by_member: [{name, amount, count}]`. `share_percent` — частка від `total`, один знак після коми.
+
+Phase 2 C: вхід + `one_time`; вихід + `one_time` (значення аргументу), `one_time_amount` біля
+`total` і в кожному рядку `by_category` та `by_member`.
 
 Приклад (**цифри вигадані**):
 
@@ -218,6 +236,9 @@ Railway, один контейнер
 `buckets: [{start_date, end_date, partial, total, count, breakdown}]`, де
 `breakdown: [{name, amount, count}]`, або `null`, коли `split_by` дорівнює `"none"`.
 
+Phase 2 C: вхід + `one_time`; вихід + `one_time`, `one_time_amount` у кожному кошику й кожному
+рядку `breakdown`.
+
 ### `list_expenses` — «Список витрат»
 
 Вхід: `start_date`, `end_date`, `category?`, `member?`, `search?: str`, `min_amount?: int` (≥ 0),
@@ -244,6 +265,57 @@ Railway, один контейнер
 | `category` | назва категорії |
 | `member` | `display_name` автора |
 | `description` | текст або `null` |
+| `is_one_time` | (Phase 2 C) `true`, якщо в боті позначено «разова» |
+
+Phase 2 C: вхід + `one_time`.
+
+### `get_limit_progress` — «Прогрес лімітів» (Phase 2 C)
+
+Вхід: `date?` — `YYYY-MM-DD`, календарний день за Києвом; за замовчуванням сьогодні. Рік поза
+2000–2100 або дата пізніше за сьогодні — помилка.
+
+Що рахує:
+
+- Два періоди, що містять `date`: календарний тиждень (Пн–Нд) і календарний місяць за Києвом —
+  у такому порядку: місяць, потім тиждень.
+- Момент оцінки `as_of = min(зараз, кінець періоду − 1 мкс)`. Для поточного періоду це «зараз»,
+  для минулого — останній момент періоду.
+- Ліміти — активні на `as_of` (остання версія з `effective_from ≤ as_of`, не знята). Для
+  минулого періоду це ліміт, що діяв на його кінець: ліміт діє на весь період, у якому
+  встановлений (рішення підпроєкту A).
+- Обчислення — `services.limits.limit_progress(session, household, period_type, as_of)`, тобто
+  ті самі `spent`, `percent`, `forecast`, `status`, що показує `/limits`. `spent` — лише
+  регулярні витрати (без позначки «разова»).
+- Для завершеного періоду `day_index = days_in_period`, тож `forecast = spent`.
+
+Вихід:
+
+| Поле | Зміст |
+|---|---|
+| `date` | дата запиту |
+| `periods` | список з двох елементів, див. нижче |
+
+Кожен елемент `periods`:
+
+| Поле | Зміст |
+|---|---|
+| `period_type` | `"month"` або `"week"` |
+| `start_date`, `end_date` | межі періоду, обидві включно |
+| `day_index`, `days_in_period` | день періоду на `as_of` (з 1) і кількість днів |
+| `complete` | `true`, якщо період уже закінчився |
+| `limits` | список; порожній, якщо лімітів не було |
+
+Кожен елемент `limits` (загальний першим, далі категорії за назвою):
+
+| Поле | Зміст |
+|---|---|
+| `category` | назва категорії або `null` для загального ліміту |
+| `amount` | ліміт, ціле число гривень |
+| `spent` | регулярні витрати періоду |
+| `percent` | `spent * 100 // amount` |
+| `remaining` | `amount − spent`, може бути від'ємним |
+| `forecast` | `round(spent / day_index × days_in_period)` |
+| `status` | `"over"` при `percent ≥ 100`; `"warn"` при `percent ≥ 80` або `forecast > amount`; інакше `"ok"` |
 
 ## Помилки
 
@@ -255,6 +327,7 @@ Railway, один контейнер
 | Рік поза 2000–2100 | повідомлення з допустимими межами |
 | `end_date` раніше за `start_date` | повідомлення з обома датами |
 | `limit` поза 1–200, `offset` < 0, `min_amount` < 0 | повідомлення з допустимими межами |
+| `get_limit_progress`: `date` пізніше за сьогодні (Phase 2 C) | повідомлення з сьогоднішньою датою за Києвом |
 | Понад 60 кошиків | `… yields N weekly buckets (max 60); use granularity="month" or a shorter range` |
 | Невідома категорія або учасник | `Unknown category '…'. Known categories: …` (для учасника так само) |
 | Два учасники збігаються після `casefold()` | повідомлення, що назва неоднозначна |
@@ -355,6 +428,13 @@ engine бота), очікувані значення порахувані вр�
    - кожен інструмент оголошує `title` і `readOnlyHint=True`, бо без них Claude питатиме
      підтвердження на кожен виклик;
    - суми `summarize_spending` за період збігаються з `build_report` бота.
+   - (Phase 2 C) `one_time`: для кожного з трьох інструментів `all` / `exclude` / `only` дають
+     правильні суми, `one_time_amount` і `is_one_time`; за замовчуванням суми не змінились;
+   - (Phase 2 C) `get_limit_progress`: поточний період збігається з
+     `services.limits.limit_progress`; минулий місяць бере ліміт, чинний на його кінець (зміна
+     після кінця місяця не враховується), `complete: true`, `forecast == spent`; разові не
+     входять у `spent`; без лімітів — порожні списки; дата в майбутньому — помилка з підказкою;
+     інструмент має `title` і `readOnlyHint`.
 2. **Read-only engine:** запис падає з `OperationalError`; коміт через engine бота видно в новій
    транзакції читання.
 3. **Автентифікація:**
